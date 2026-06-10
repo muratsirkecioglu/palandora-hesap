@@ -38,7 +38,7 @@ export function Sidebar() {
     <>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
         <Building2 className="h-6 w-6 text-primary" />
-        <span className="font-semibold text-sm">Palandöken</span>
+        <span className="font-semibold text-sm">Palandora</span>
       </div>
 
       <nav className="flex-1 px-2 py-4 space-y-1">
@@ -117,7 +117,7 @@ export function Sidebar() {
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-background border-b border-border">
         <div className="flex items-center gap-2">
           <Building2 className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">Palandöken</span>
+          <span className="font-semibold text-sm">Palandora</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

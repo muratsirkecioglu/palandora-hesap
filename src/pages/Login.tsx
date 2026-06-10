@@ -37,7 +37,7 @@ export function Login() {
               <Building2 className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-xl">Palandöken Hesap</CardTitle>
+          <CardTitle className="text-xl">Palandora Hesap</CardTitle>
           <CardDescription>Hesabınıza giriş yapın</CardDescription>
         </CardHeader>
         <CardContent>
