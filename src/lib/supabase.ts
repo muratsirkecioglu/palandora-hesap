@@ -35,6 +35,7 @@ export interface Islem {
   odenen_tutar: number
   vade_tarihi: string | null
   notlar: string | null
+  adam_saat: number | null
   created_at: string
 }
 

@@ -174,6 +174,9 @@ export function Finans() {
                           Ödenen: {formatCurrency(islem.odenen_tutar)} · Kalan: {formatCurrency(kalan)}
                         </p>
                       )}
+                      {islem.adam_saat != null && (
+                        <p className="text-xs text-muted-foreground mt-0.5">Emek: {islem.adam_saat} adam/saat</p>
+                      )}
                       {islem.notlar && <p className="text-xs text-muted-foreground italic mt-0.5">{islem.notlar}</p>}
                     </div>
 

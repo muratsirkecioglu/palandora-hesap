@@ -34,6 +34,7 @@ const defaultForm = {
   ilk_odeme: "",
   vade_tarihi: "",
   notlar: "",
+  adam_saat: "",
 }
 
 export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Props) {
@@ -58,6 +59,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
         ilk_odeme: "",
         vade_tarihi: editing.vade_tarihi ?? "",
         notlar: editing.notlar ?? "",
+        adam_saat: editing.adam_saat != null ? String(editing.adam_saat) : "",
       })
       // Mevcut stok satırlarını yükle
       supabase.from("islem_stok").select("*").eq("islem_id", editing.id).then(({ data }) => {
@@ -121,6 +123,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
         : 0,
       vade_tarihi: form.vade_tarihi || null,
       notlar: form.notlar || null,
+      adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
       kullanici_id: user!.id,
     }
 
@@ -311,6 +314,17 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Emek */}
+          <div className="space-y-1.5">
+            <Label>Emek — Adam/Saat (isteğe bağlı)</Label>
+            <Input
+              type="number" min="0" step="0.5"
+              value={form.adam_saat}
+              onChange={e => setF("adam_saat", e.target.value)}
+              placeholder="0"
+            />
           </div>
 
           {/* Notlar */}
