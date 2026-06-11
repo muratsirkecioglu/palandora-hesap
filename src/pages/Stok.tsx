@@ -151,6 +151,9 @@ export function Stok() {
             <div className="divide-y divide-border">
               {filtered.map(m => {
                 const kritikMi = m.miktar <= m.min_miktar
+                const birimMaliyet = m.miktar > 0
+                  ? m.birim_fiyat + (m.nakliye_tutari ?? 0) / m.miktar
+                  : m.birim_fiyat
                 return (
                   <div key={m.id} className="flex items-center justify-between py-3 gap-4">
                     <div className="flex-1 min-w-0">
@@ -163,8 +166,8 @@ export function Stok() {
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Min: {m.min_miktar} {m.birim} · {formatCurrency(m.birim_fiyat)}/{m.birim}
-                        {m.alis_tarihi && ` · Alış: ${formatDate(m.alis_tarihi)}`}
+                        Min: {m.min_miktar} {m.birim} · Alış: {formatCurrency(m.birim_fiyat)}/{m.birim}
+                        {m.alis_tarihi && ` · ${formatDate(m.alis_tarihi)}`}
                         {m.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.nakliye_tutari)}`}
                       </p>
                     </div>
@@ -174,6 +177,9 @@ export function Stok() {
                           {m.miktar} {m.birim}
                         </p>
                         <p className="text-xs text-muted-foreground">{formatCurrency(m.miktar * m.birim_fiyat)}</p>
+                        <p className="text-xs font-medium text-blue-600">
+                          Maliyet: {formatCurrency(birimMaliyet)}/{m.birim}
+                        </p>
                       </div>
                       {(isAdmin || m.kullanici_id === user?.id) && (
                         <>
