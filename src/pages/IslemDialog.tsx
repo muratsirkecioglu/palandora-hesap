@@ -1,11 +1,10 @@
 import { useEffect, useState, useMemo } from "react"
-import { Loader2, Plus, Trash2, Package } from "lucide-react"
+import { Loader2, Plus, Trash2 } from "lucide-react"
 import { supabase, type Islem, type Malzeme } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
@@ -356,93 +355,97 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
             )}
           </div>
 
-          {/* ── Malzeme Gider: Yeni Stok Girişi ─────────────────────────── */}
-          {isMalzemeGider && (
-            <div className="space-y-3 border border-blue-200 bg-blue-50/50 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <Package className="h-4 w-4 text-blue-600" />
-                <p className="text-sm font-medium text-blue-800">Stok Girişi</p>
-                {linkedMalzemeId && (
-                  <Badge variant="outline" className="text-xs ml-auto">Bağlı kayıt var</Badge>
-                )}
+          {/* ── Malzeme Gider: Stok alanları doğrudan formun içinde ──────── */}
+          {isMalzemeGider && (<>
+            <div className="relative flex items-center gap-2 py-1">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-xs text-muted-foreground shrink-0">Stok Bilgisi</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Malzeme Adı *</Label>
+              <Input
+                value={malzemeAlt.ad}
+                onChange={e => setMA("ad", e.target.value)}
+                placeholder="Malzeme adı"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Stok Kategorisi</Label>
+                <Select value={malzemeAlt.mal_kategori} onValueChange={v => setMA("mal_kategori", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {MALZEME_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5 col-span-2">
-                  <Label className="text-xs">Malzeme Adı *</Label>
-                  <Input
-                    value={malzemeAlt.ad}
-                    onChange={e => setMA("ad", e.target.value)}
-                    placeholder="Malzeme adı"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Kategori</Label>
-                  <Select value={malzemeAlt.mal_kategori} onValueChange={v => setMA("mal_kategori", v)}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {MALZEME_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Birim</Label>
-                  <Select value={malzemeAlt.birim} onValueChange={v => setMA("birim", v)}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Miktar *</Label>
-                  <Input
-                    type="number" min="0" step="0.001"
-                    value={malzemeAlt.miktar}
-                    onChange={e => setMA("miktar", e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Min. Stok</Label>
-                  <Input
-                    type="number" min="0"
-                    value={malzemeAlt.min_miktar}
-                    onChange={e => setMA("min_miktar", e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="space-y-1.5 col-span-2">
-                  <Label className="text-xs">Nakliye Tutarı (₺) — isteğe bağlı</Label>
-                  <Input
-                    type="number" min="0" step="0.01"
-                    value={malzemeAlt.nakliye_tutari}
-                    onChange={e => setMA("nakliye_tutari", e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              {/* Hesaplanan birim fiyat */}
-              {hesapBirimFiyat !== null && (
-                <div className="flex items-center justify-between rounded bg-blue-100 px-3 py-1.5 text-xs text-blue-800">
-                  <span>Hesaplanan birim fiyat</span>
-                  <span className="font-semibold">{formatCurrency(hesapBirimFiyat)} / {malzemeAlt.birim}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="faturali_alt"
-                  checked={malzemeAlt.faturali}
-                  onChange={e => setMA("faturali", e.target.checked)}
-                  className="h-4 w-4 rounded border-border"
-                />
-                <label htmlFor="faturali_alt" className="text-xs font-medium cursor-pointer">Faturalı</label>
+              <div className="space-y-1.5">
+                <Label>Birim</Label>
+                <Select value={malzemeAlt.birim} onValueChange={v => setMA("birim", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Miktar *</Label>
+                <Input
+                  type="number" min="0" step="0.001"
+                  value={malzemeAlt.miktar}
+                  onChange={e => setMA("miktar", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Min. Stok</Label>
+                <Input
+                  type="number" min="0"
+                  value={malzemeAlt.min_miktar}
+                  onChange={e => setMA("min_miktar", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Nakliye Tutarı (₺) — isteğe bağlı</Label>
+              <Input
+                type="number" min="0" step="0.01"
+                value={malzemeAlt.nakliye_tutari}
+                onChange={e => setMA("nakliye_tutari", e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+
+            {hesapBirimFiyat !== null && (
+              <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Birim fiyat (hesap)</span>
+                <span className="font-medium">{formatCurrency(hesapBirimFiyat)} / {malzemeAlt.birim}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="faturali_alt"
+                checked={malzemeAlt.faturali}
+                onChange={e => setMA("faturali", e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="faturali_alt" className="text-sm font-medium cursor-pointer">Faturalı</label>
+            </div>
+
+            <div className="relative flex items-center gap-2 py-1">
+              <div className="flex-1 border-t border-border" />
+            </div>
+          </>)}
 
           {/* ── Diğer türler: islem_stok çoklu satır ─────────────────────── */}
           {!isMalzemeGider && (
