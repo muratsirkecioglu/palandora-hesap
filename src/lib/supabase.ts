@@ -88,6 +88,7 @@ export interface Malzeme {
   min_miktar: number
   birim_fiyat: number
   aciklama: string
+  alis_tarihi: string | null
   faturali: boolean
   nakliye_tutari: number | null
   kullanici_id: string

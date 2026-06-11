@@ -9,14 +9,14 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 
 const KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 const defaultForm = {
   ad: "", kategori: "Hammadde", miktar: "", birim: "Adet",
-  min_miktar: "", birim_fiyat: "", aciklama: "", faturali: true, nakliye_tutari: "",
+  min_miktar: "", birim_fiyat: "", aciklama: "", alis_tarihi: "", faturali: true, nakliye_tutari: "",
 }
 
 export function Stok() {
@@ -55,7 +55,8 @@ export function Stok() {
       ad: m.ad, kategori: m.kategori, miktar: String(m.miktar),
       birim: m.birim, min_miktar: String(m.min_miktar),
       birim_fiyat: String(m.birim_fiyat), aciklama: m.aciklama ?? "",
-      faturali: m.faturali, nakliye_tutari: m.nakliye_tutari != null ? String(m.nakliye_tutari) : "",
+      alis_tarihi: m.alis_tarihi ?? "", faturali: m.faturali,
+      nakliye_tutari: m.nakliye_tutari != null ? String(m.nakliye_tutari) : "",
     })
     setDialogOpen(true)
   }
@@ -70,6 +71,7 @@ export function Stok() {
       min_miktar: parseFloat(form.min_miktar) || 0,
       birim_fiyat: parseFloat(form.birim_fiyat) || 0,
       aciklama: form.aciklama,
+      alis_tarihi: form.alis_tarihi || null,
       faturali: form.faturali,
       nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
       kullanici_id: user!.id,
@@ -162,6 +164,7 @@ export function Stok() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Min: {m.min_miktar} {m.birim} · {formatCurrency(m.birim_fiyat)}/{m.birim}
+                        {m.alis_tarihi && ` · Alış: ${formatDate(m.alis_tarihi)}`}
                         {m.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.nakliye_tutari)}`}
                       </p>
                     </div>
@@ -218,6 +221,10 @@ export function Stok() {
                   <SelectContent>{BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Alış Tarihi (isteğe bağlı)</Label>
+              <Input type="date" value={form.alis_tarihi} onChange={e => f("alis_tarihi", e.target.value)} />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
