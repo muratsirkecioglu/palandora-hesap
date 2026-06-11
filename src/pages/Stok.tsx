@@ -16,7 +16,7 @@ const BIRIMLER = ["Adet", "Kg", "Lt", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 const defaultForm = {
   ad: "", kategori: "Hammadde", miktar: "", birim: "Adet",
-  min_miktar: "", birim_fiyat: "", aciklama: "", faturali: true,
+  min_miktar: "", birim_fiyat: "", aciklama: "", faturali: true, nakliye_tutari: "",
 }
 
 export function Stok() {
@@ -55,7 +55,7 @@ export function Stok() {
       ad: m.ad, kategori: m.kategori, miktar: String(m.miktar),
       birim: m.birim, min_miktar: String(m.min_miktar),
       birim_fiyat: String(m.birim_fiyat), aciklama: m.aciklama ?? "",
-      faturali: m.faturali,
+      faturali: m.faturali, nakliye_tutari: m.nakliye_tutari != null ? String(m.nakliye_tutari) : "",
     })
     setDialogOpen(true)
   }
@@ -71,6 +71,7 @@ export function Stok() {
       birim_fiyat: parseFloat(form.birim_fiyat) || 0,
       aciklama: form.aciklama,
       faturali: form.faturali,
+      nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
       kullanici_id: user!.id,
     }
     if (editing) {
@@ -161,6 +162,7 @@ export function Stok() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Min: {m.min_miktar} {m.birim} · {formatCurrency(m.birim_fiyat)}/{m.birim}
+                        {m.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.nakliye_tutari)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -234,6 +236,10 @@ export function Stok() {
             <div className="space-y-1.5">
               <Label>Açıklama (isteğe bağlı)</Label>
               <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder="Notlar..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Nakliye Tutarı (₺) — isteğe bağlı</Label>
+              <Input type="number" min="0" step="0.01" value={form.nakliye_tutari} onChange={e => f("nakliye_tutari", e.target.value)} placeholder="0.00" />
             </div>
             <div className="flex items-center gap-2">
               <input

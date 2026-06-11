@@ -89,6 +89,7 @@ export interface Malzeme {
   birim_fiyat: number
   aciklama: string
   faturali: boolean
+  nakliye_tutari: number | null
   kullanici_id: string
   created_at: string
   updated_at: string
