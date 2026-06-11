@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency, formatDate } from "@/lib/utils"
 
 const KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
-const BIRIMLER = ["Adet", "Kg", "Lt", "m²", "m³", "Paket", "Kutu", "Ton"]
+const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 const defaultForm = {
   ad: "", kategori: "Hammadde", miktar: "", birim: "Adet",
