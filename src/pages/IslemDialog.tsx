@@ -1,19 +1,43 @@
-import { useEffect, useState } from "react"
-import { Loader2, Plus, Trash2 } from "lucide-react"
+import { useEffect, useState, useMemo } from "react"
+import { Loader2, Plus, Trash2, Package } from "lucide-react"
 import { supabase, type Islem, type Malzeme } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatCurrency } from "@/lib/utils"
 
 const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Fatura", "Vergi", "Diğer"]
+const MALZEME_KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
+const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 interface StokSatir {
   malzeme_id: string
   miktar: string
   birim_fiyat: string
+}
+
+interface MalzemeAlt {
+  ad: string
+  mal_kategori: string
+  birim: string
+  miktar: string
+  min_miktar: string
+  faturali: boolean
+  nakliye_tutari: string
+}
+
+const defaultMalzemeAlt: MalzemeAlt = {
+  ad: "",
+  mal_kategori: "Hammadde",
+  birim: "Adet",
+  miktar: "",
+  min_miktar: "0",
+  faturali: true,
+  nakliye_tutari: "",
 }
 
 interface Props {
@@ -42,12 +66,29 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
   const [stokEkle, setStokEkle] = useState(false)
+  const [malzemeAlt, setMalzemeAlt] = useState<MalzemeAlt>(defaultMalzemeAlt)
+  const [linkedMalzemeId, setLinkedMalzemeId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // gider + Malzeme kategorisi mi?
+  const isMalzemeGider = form.tur === "gider" && form.kategori === "Malzeme"
+
+  // birim_fiyat = (tutar - nakliye) / miktar — anlık hesap
+  const hesapBirimFiyat = useMemo(() => {
+    const tutar = parseFloat(form.tutar) || 0
+    const miktar = parseFloat(malzemeAlt.miktar) || 0
+    const nakliye = parseFloat(malzemeAlt.nakliye_tutari) || 0
+    if (miktar <= 0 || tutar <= 0) return null
+    return (tutar - nakliye) / miktar
+  }, [form.tutar, malzemeAlt.miktar, malzemeAlt.nakliye_tutari])
 
   useEffect(() => {
     if (!open) return
     setError(null)
+    setLinkedMalzemeId(null)
+    setMalzemeAlt(defaultMalzemeAlt)
+
     if (editing) {
       setForm({
         tarih: editing.tarih,
@@ -61,20 +102,44 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
         notlar: editing.notlar ?? "",
         adam_saat: editing.adam_saat != null ? String(editing.adam_saat) : "",
       })
-      // Mevcut stok satırlarını yükle
-      supabase.from("islem_stok").select("*").eq("islem_id", editing.id).then(({ data }) => {
-        if (data && data.length > 0) {
-          setStokEkle(true)
-          setStokSatirlar(data.map(s => ({
-            malzeme_id: s.malzeme_id,
-            miktar: String(s.miktar),
-            birim_fiyat: String(s.birim_fiyat),
-          })))
-        } else {
-          setStokEkle(false)
-          setStokSatirlar([])
-        }
-      })
+
+      if (editing.tur === "gider" && editing.kategori === "Malzeme") {
+        // Bağlı malzemeyi yükle
+        supabase
+          .from("malzemeler")
+          .select("*")
+          .eq("kaynak_islem_id", editing.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              setLinkedMalzemeId(data.id)
+              setMalzemeAlt({
+                ad: data.ad,
+                mal_kategori: data.kategori,
+                birim: data.birim,
+                miktar: String(data.miktar),
+                min_miktar: String(data.min_miktar),
+                faturali: data.faturali,
+                nakliye_tutari: data.nakliye_tutari != null ? String(data.nakliye_tutari) : "",
+              })
+            }
+          })
+      } else {
+        // Diğer türler için islem_stok satırlarını yükle
+        supabase.from("islem_stok").select("*").eq("islem_id", editing.id).then(({ data }) => {
+          if (data && data.length > 0) {
+            setStokEkle(true)
+            setStokSatirlar(data.map(s => ({
+              malzeme_id: s.malzeme_id,
+              miktar: String(s.miktar),
+              birim_fiyat: String(s.birim_fiyat),
+            })))
+          } else {
+            setStokEkle(false)
+            setStokSatirlar([])
+          }
+        })
+      }
     } else {
       setForm(defaultForm)
       setStokEkle(false)
@@ -84,6 +149,10 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
 
   function setF(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  function setMA(field: keyof MalzemeAlt, value: string | boolean) {
+    setMalzemeAlt(prev => ({ ...prev, [field]: value }))
   }
 
   function addStokSatir() {
@@ -107,6 +176,13 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
 
   async function handleSave() {
     if (!form.aciklama || !form.tutar || !form.tarih) return
+
+    // Malzeme gider ise alt form zorunlu
+    if (isMalzemeGider && (!malzemeAlt.ad || !malzemeAlt.miktar)) {
+      setError("Stok bilgisi için malzeme adı ve miktar zorunludur.")
+      return
+    }
+
     setSaving(true)
     setError(null)
 
@@ -134,42 +210,63 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
       if (error) { setError(error.message); setSaving(false); return }
       islemId = editing.id
 
-      // Eski stok satırlarını sil (triggerlar malzeme miktarlarını geri alır)
-      await supabase.from("islem_stok").delete().eq("islem_id", islemId)
-
-      // Eski ödeme kayıtlarını koru - sadece yeni islem oluşturulurken ilk ödeme eklenir
+      if (!isMalzemeGider) {
+        await supabase.from("islem_stok").delete().eq("islem_id", islemId)
+      }
     } else {
       const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
       if (error) { setError(error.message); setSaving(false); return }
       islemId = data.id
 
-      // İlk ödeme kaydı ekle (ödendi veya kısmi ödendi ise)
       if (form.odeme_durumu === "odendi") {
         await supabase.from("odemeler").insert({
-          islem_id: islemId,
-          tarih: form.tarih,
-          tutar: toplam,
-          aciklama: "Tam ödeme",
-          kullanici_id: user!.id,
+          islem_id: islemId, tarih: form.tarih, tutar: toplam,
+          aciklama: "Tam ödeme", kullanici_id: user!.id,
         })
       } else if (form.odeme_durumu === "kismi_odendi" && parseFloat(form.ilk_odeme || "0") > 0) {
         await supabase.from("odemeler").insert({
-          islem_id: islemId,
-          tarih: form.tarih,
-          tutar: parseFloat(form.ilk_odeme),
-          aciklama: "İlk ödeme",
-          kullanici_id: user!.id,
+          islem_id: islemId, tarih: form.tarih, tutar: parseFloat(form.ilk_odeme),
+          aciklama: "İlk ödeme", kullanici_id: user!.id,
         })
       }
     }
 
-    // Stok satırlarını kaydet
-    if (stokEkle && stokSatirlar.length > 0) {
-      const gecerliSatirlar = stokSatirlar.filter(s => s.malzeme_id && parseFloat(s.miktar) > 0)
-      if (gecerliSatirlar.length > 0) {
+    // ── Malzeme gider: tek stok kaydı oluştur / güncelle ──────────────────
+    if (isMalzemeGider) {
+      const miktar = parseFloat(malzemeAlt.miktar) || 0
+      const nakliye = malzemeAlt.nakliye_tutari ? parseFloat(malzemeAlt.nakliye_tutari) : null
+      const birimFiyat = miktar > 0 ? (toplam - (nakliye ?? 0)) / miktar : 0
+
+      const malzemePayload = {
+        ad: malzemeAlt.ad,
+        kategori: malzemeAlt.mal_kategori,
+        birim: malzemeAlt.birim,
+        miktar,
+        min_miktar: parseFloat(malzemeAlt.min_miktar) || 0,
+        birim_fiyat: birimFiyat,
+        faturali: malzemeAlt.faturali,
+        nakliye_tutari: nakliye,
+        alis_tarihi: form.tarih,
+        kullanici_id: user!.id,
+        kaynak_islem_id: islemId,
+      }
+
+      if (linkedMalzemeId) {
+        await supabase.from("malzemeler").update({
+          ...malzemePayload, updated_at: new Date().toISOString()
+        }).eq("id", linkedMalzemeId)
+      } else {
+        await supabase.from("malzemeler").insert(malzemePayload)
+      }
+    }
+
+    // ── Diğer türler: çoklu islem_stok satırları ──────────────────────────
+    if (!isMalzemeGider && stokEkle && stokSatirlar.length > 0) {
+      const gecerli = stokSatirlar.filter(s => s.malzeme_id && parseFloat(s.miktar) > 0)
+      if (gecerli.length > 0) {
         const stokTur = form.tur === "gider" ? "giris" : "cikis"
         await supabase.from("islem_stok").insert(
-          gecerliSatirlar.map(s => ({
+          gecerli.map(s => ({
             islem_id: islemId,
             malzeme_id: s.malzeme_id,
             miktar: parseFloat(s.miktar),
@@ -185,7 +282,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
     onClose()
   }
 
-  const stokLabel = form.tur === "gider" ? "Stoka giriş (mal alımı)" : "Stoktan çıkış (mal kullanımı)"
+  const stokLabel = "Stoktan çıkış (mal kullanımı / satış)"
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -245,14 +342,12 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
                 <SelectItem value="beklemede">⏳ Beklemede / Vadeli</SelectItem>
               </SelectContent>
             </Select>
-
             {form.odeme_durumu === "kismi_odendi" && (
               <div className="space-y-1.5">
                 <Label>Ödenen Miktar (₺)</Label>
                 <Input type="number" min="0" step="0.01" value={form.ilk_odeme} onChange={e => setF("ilk_odeme", e.target.value)} placeholder="0.00" />
               </div>
             )}
-
             {form.odeme_durumu !== "odendi" && (
               <div className="space-y-1.5">
                 <Label>Vade Tarihi</Label>
@@ -261,60 +356,149 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
             )}
           </div>
 
-          {/* Stok hareketi */}
-          <div className="space-y-3 border border-border rounded-lg p-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="stok_ekle"
-                checked={stokEkle}
-                onChange={e => {
-                  setStokEkle(e.target.checked)
-                  if (e.target.checked && stokSatirlar.length === 0) addStokSatir()
-                  if (!e.target.checked) setStokSatirlar([])
-                }}
-                className="h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="stok_ekle" className="text-sm font-medium cursor-pointer">{stokLabel}</label>
-            </div>
-
-            {stokEkle && (
-              <div className="space-y-2">
-                {stokSatirlar.map((satir, i) => {
-                  const seciliMalzeme = malzemeler.find(m => m.id === satir.malzeme_id)
-                  return (
-                    <div key={i} className="grid grid-cols-[1fr_80px_80px_32px] gap-2 items-end">
-                      <div className="space-y-1">
-                        {i === 0 && <Label className="text-xs">Malzeme</Label>}
-                        <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
-                          <SelectContent>
-                            {malzemeler.map(m => (
-                              <SelectItem key={m.id} value={m.id}>{m.ad} ({m.miktar} {m.birim})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        {i === 0 && <Label className="text-xs">Miktar{seciliMalzeme ? ` (${seciliMalzeme.birim})` : ""}</Label>}
-                        <Input className="h-8 text-xs" type="number" min="0" step="0.001" value={satir.miktar} onChange={e => updateStokSatir(i, "miktar", e.target.value)} placeholder="0" />
-                      </div>
-                      <div className="space-y-1">
-                        {i === 0 && <Label className="text-xs">Birim Fiyat</Label>}
-                        <Input className="h-8 text-xs" type="number" min="0" step="0.01" value={satir.birim_fiyat} onChange={e => updateStokSatir(i, "birim_fiyat", e.target.value)} placeholder="0.00" />
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeStokSatir(i)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )
-                })}
-                <Button variant="outline" size="sm" onClick={addStokSatir} className="gap-1 text-xs">
-                  <Plus className="h-3 w-3" /> Satır Ekle
-                </Button>
+          {/* ── Malzeme Gider: Yeni Stok Girişi ─────────────────────────── */}
+          {isMalzemeGider && (
+            <div className="space-y-3 border border-blue-200 bg-blue-50/50 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <Package className="h-4 w-4 text-blue-600" />
+                <p className="text-sm font-medium text-blue-800">Stok Girişi</p>
+                {linkedMalzemeId && (
+                  <Badge variant="outline" className="text-xs ml-auto">Bağlı kayıt var</Badge>
+                )}
               </div>
-            )}
-          </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Malzeme Adı *</Label>
+                  <Input
+                    value={malzemeAlt.ad}
+                    onChange={e => setMA("ad", e.target.value)}
+                    placeholder="Malzeme adı"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Kategori</Label>
+                  <Select value={malzemeAlt.mal_kategori} onValueChange={v => setMA("mal_kategori", v)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MALZEME_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Birim</Label>
+                  <Select value={malzemeAlt.birim} onValueChange={v => setMA("birim", v)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Miktar *</Label>
+                  <Input
+                    type="number" min="0" step="0.001"
+                    value={malzemeAlt.miktar}
+                    onChange={e => setMA("miktar", e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Min. Stok</Label>
+                  <Input
+                    type="number" min="0"
+                    value={malzemeAlt.min_miktar}
+                    onChange={e => setMA("min_miktar", e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Nakliye Tutarı (₺) — isteğe bağlı</Label>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    value={malzemeAlt.nakliye_tutari}
+                    onChange={e => setMA("nakliye_tutari", e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              {/* Hesaplanan birim fiyat */}
+              {hesapBirimFiyat !== null && (
+                <div className="flex items-center justify-between rounded bg-blue-100 px-3 py-1.5 text-xs text-blue-800">
+                  <span>Hesaplanan birim fiyat</span>
+                  <span className="font-semibold">{formatCurrency(hesapBirimFiyat)} / {malzemeAlt.birim}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="faturali_alt"
+                  checked={malzemeAlt.faturali}
+                  onChange={e => setMA("faturali", e.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <label htmlFor="faturali_alt" className="text-xs font-medium cursor-pointer">Faturalı</label>
+              </div>
+            </div>
+          )}
+
+          {/* ── Diğer türler: islem_stok çoklu satır ─────────────────────── */}
+          {!isMalzemeGider && (
+            <div className="space-y-3 border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="stok_ekle"
+                  checked={stokEkle}
+                  onChange={e => {
+                    setStokEkle(e.target.checked)
+                    if (e.target.checked && stokSatirlar.length === 0) addStokSatir()
+                    if (!e.target.checked) setStokSatirlar([])
+                  }}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <label htmlFor="stok_ekle" className="text-sm font-medium cursor-pointer">{stokLabel}</label>
+              </div>
+              {stokEkle && (
+                <div className="space-y-2">
+                  {stokSatirlar.map((satir, i) => {
+                    const secili = malzemeler.find(m => m.id === satir.malzeme_id)
+                    return (
+                      <div key={i} className="grid grid-cols-[1fr_80px_80px_32px] gap-2 items-end">
+                        <div className="space-y-1">
+                          {i === 0 && <Label className="text-xs">Malzeme</Label>}
+                          <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                            <SelectContent>
+                              {malzemeler.map(m => (
+                                <SelectItem key={m.id} value={m.id}>{m.ad} ({m.miktar} {m.birim})</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          {i === 0 && <Label className="text-xs">Miktar{secili ? ` (${secili.birim})` : ""}</Label>}
+                          <Input className="h-8 text-xs" type="number" min="0" step="0.001" value={satir.miktar} onChange={e => updateStokSatir(i, "miktar", e.target.value)} placeholder="0" />
+                        </div>
+                        <div className="space-y-1">
+                          {i === 0 && <Label className="text-xs">Birim Fiyat</Label>}
+                          <Input className="h-8 text-xs" type="number" min="0" step="0.01" value={satir.birim_fiyat} onChange={e => updateStokSatir(i, "birim_fiyat", e.target.value)} placeholder="0.00" />
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeStokSatir(i)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                  <Button variant="outline" size="sm" onClick={addStokSatir} className="gap-1 text-xs">
+                    <Plus className="h-3 w-3" /> Satır Ekle
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Emek */}
           <div className="space-y-1.5">

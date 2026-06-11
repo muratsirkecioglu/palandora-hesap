@@ -92,6 +92,7 @@ export interface Malzeme {
   alis_tarihi: string | null
   faturali: boolean
   nakliye_tutari: number | null
+  kaynak_islem_id: string | null
   kullanici_id: string
   created_at: string
   updated_at: string
