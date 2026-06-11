@@ -16,7 +16,7 @@ const BIRIMLER = ["Adet", "Kg", "Lt", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 const defaultForm = {
   ad: "", kategori: "Hammadde", miktar: "", birim: "Adet",
-  min_miktar: "", birim_fiyat: "", aciklama: "",
+  min_miktar: "", birim_fiyat: "", aciklama: "", faturali: true,
 }
 
 export function Stok() {
@@ -55,6 +55,7 @@ export function Stok() {
       ad: m.ad, kategori: m.kategori, miktar: String(m.miktar),
       birim: m.birim, min_miktar: String(m.min_miktar),
       birim_fiyat: String(m.birim_fiyat), aciklama: m.aciklama ?? "",
+      faturali: m.faturali,
     })
     setDialogOpen(true)
   }
@@ -69,6 +70,7 @@ export function Stok() {
       min_miktar: parseFloat(form.min_miktar) || 0,
       birim_fiyat: parseFloat(form.birim_fiyat) || 0,
       aciklama: form.aciklama,
+      faturali: form.faturali,
       kullanici_id: user!.id,
     }
     if (editing) {
@@ -153,6 +155,9 @@ export function Stok() {
                         <p className="font-medium text-sm">{m.ad}</p>
                         {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
                         <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
+                        <Badge variant={m.faturali ? "success" : "warning"} className="text-xs shrink-0">
+                          {m.faturali ? "Faturalı" : "Faturasız"}
+                        </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Min: {m.min_miktar} {m.birim} · {formatCurrency(m.birim_fiyat)}/{m.birim}
@@ -229,6 +234,16 @@ export function Stok() {
             <div className="space-y-1.5">
               <Label>Açıklama (isteğe bağlı)</Label>
               <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder="Notlar..." />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="faturali"
+                checked={form.faturali}
+                onChange={e => setForm(p => ({ ...p, faturali: e.target.checked }))}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="faturali" className="text-sm font-medium cursor-pointer">Faturalı</label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>İptal</Button>
