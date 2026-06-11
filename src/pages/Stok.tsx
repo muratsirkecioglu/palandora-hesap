@@ -64,23 +64,75 @@ export function Stok() {
   async function handleSave() {
     if (!form.ad || !form.miktar) return
     setSaving(true)
+
+    const miktar = parseFloat(form.miktar) || 0
+    const birimFiyat = parseFloat(form.birim_fiyat) || 0
+    const nakliye = form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null
+    const toplamTutar = miktar * birimFiyat + (nakliye ?? 0)
+    const tarih = form.alis_tarihi || new Date().toISOString().slice(0, 10)
+
     const payload = {
       ad: form.ad, kategori: form.kategori,
-      miktar: parseFloat(form.miktar) || 0,
-      birim: form.birim,
+      miktar, birim: form.birim,
       min_miktar: parseFloat(form.min_miktar) || 0,
-      birim_fiyat: parseFloat(form.birim_fiyat) || 0,
+      birim_fiyat: birimFiyat,
       aciklama: form.aciklama,
       alis_tarihi: form.alis_tarihi || null,
       faturali: form.faturali,
-      nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
+      nakliye_tutari: nakliye,
       kullanici_id: user!.id,
     }
+
     if (editing) {
-      await supabase.from("malzemeler").update({ ...payload, updated_at: new Date().toISOString() }).eq("id", editing.id)
+      await supabase.from("malzemeler")
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id", editing.id)
+
+      // Bağlı gider işlemini de güncelle
+      if (editing.kaynak_islem_id) {
+        await supabase.from("islemler").update({
+          tarih,
+          aciklama: form.ad + " alımı",
+          tutar: toplamTutar,
+          odenen_tutar: toplamTutar,
+        }).eq("id", editing.kaynak_islem_id)
+      }
     } else {
-      await supabase.from("malzemeler").insert(payload)
+      // Malzeme oluştur
+      const { data: malzeme } = await supabase
+        .from("malzemeler").insert(payload).select().single()
+
+      if (malzeme) {
+        // Eşlenik gider işlemi oluştur
+        const { data: islem } = await supabase.from("islemler").insert({
+          tarih,
+          aciklama: form.ad + " alımı",
+          tutar: toplamTutar,
+          tur: "gider",
+          kategori: "Malzeme",
+          odeme_durumu: "odendi",
+          odenen_tutar: toplamTutar,
+          kullanici_id: user!.id,
+        }).select().single()
+
+        if (islem) {
+          // Bağlantıyı kur
+          await supabase.from("malzemeler")
+            .update({ kaynak_islem_id: islem.id })
+            .eq("id", malzeme.id)
+
+          // Ödeme kaydı (OdemeDialog ile tutarlı olsun)
+          await supabase.from("odemeler").insert({
+            islem_id: islem.id,
+            tarih,
+            tutar: toplamTutar,
+            aciklama: "Stok girişi",
+            kullanici_id: user!.id,
+          })
+        }
+      }
     }
+
     setSaving(false)
     setDialogOpen(false)
     load()
