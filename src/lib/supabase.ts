@@ -31,6 +31,30 @@ export interface Islem {
   tur: "gelir" | "gider"
   kategori: string
   kullanici_id: string
+  odeme_durumu: "odendi" | "kismi_odendi" | "beklemede"
+  odenen_tutar: number
+  vade_tarihi: string | null
+  notlar: string | null
+  created_at: string
+}
+
+export interface Odeme {
+  id: string
+  islem_id: string
+  tarih: string
+  tutar: number
+  aciklama: string | null
+  kullanici_id: string
+  created_at: string
+}
+
+export interface IslemStok {
+  id: string
+  islem_id: string
+  malzeme_id: string
+  miktar: number
+  tur: "giris" | "cikis"
+  birim_fiyat: number
   created_at: string
 }
 
