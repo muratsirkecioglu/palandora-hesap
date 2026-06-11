@@ -6,6 +6,7 @@ import { Dashboard } from "@/pages/Dashboard"
 import { Finans } from "@/pages/Finans"
 import { Stok } from "@/pages/Stok"
 import { Kullanicilar } from "@/pages/Kullanicilar"
+import { Demirbaslar } from "@/pages/Demirbaslar"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -29,6 +30,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="finans" element={<Finans />} />
         <Route path="stok" element={<Stok />} />
+        <Route path="demirbaslar" element={<Demirbaslar />} />
         <Route path="kullanicilar" element={<AdminRoute><Kullanicilar /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

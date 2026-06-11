@@ -8,6 +8,7 @@ import {
   Building2,
   Menu,
   X,
+  Landmark,
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -18,6 +19,7 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Panel" },
   { to: "/finans", icon: TrendingUp, label: "Finans" },
   { to: "/stok", icon: Package, label: "Stok" },
+  { to: "/demirbaslar", icon: Landmark, label: "Demirbaşlar" },
 ]
 
 const adminItems = [

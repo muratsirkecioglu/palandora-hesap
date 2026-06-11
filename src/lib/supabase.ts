@@ -58,6 +58,27 @@ export interface IslemStok {
   created_at: string
 }
 
+export interface Demirbase {
+  id: string
+  ad: string
+  kategori: string
+  marka: string | null
+  model: string | null
+  seri_no: string | null
+  alis_tarihi: string | null
+  alis_fiyati: number | null
+  konum: string | null
+  durum: "aktif" | "bakimda" | "hurda" | "devredildi"
+  zimmet_kullanici_id: string | null
+  zimmet_tarihi: string | null
+  garanti_bitis: string | null
+  son_bakim_tarihi: string | null
+  sonraki_bakim_tarihi: string | null
+  notlar: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Malzeme {
   id: string
   ad: string
