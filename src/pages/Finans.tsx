@@ -131,6 +131,9 @@ export function Finans() {
                 <ArrowLeftRight className="h-2.5 w-2.5" /> Transfer
               </Badge>
             )}
+            <Badge variant={islem.faturali ? "outline" : "warning"} className="text-xs">
+              {islem.faturali ? "Faturalı" : "Faturasız"}
+            </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {formatDate(islem.tarih)} · {islem.kategori}
