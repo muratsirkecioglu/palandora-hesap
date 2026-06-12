@@ -98,7 +98,7 @@ export function Finans() {
     .reduce((s, i) => s + (i.tutar - i.odenen_tutar), 0)
 
   function IslemSatir({ islem }: { islem: Islem }) {
-    const kalan = islem.tutar - islem.odened_tutar
+    const kalan = islem.tutar - islem.odenen_tutar
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const hesapAd = islem.hesap_id ? hesaplar.find(h => h.id === islem.hesap_id)?.ad : null
