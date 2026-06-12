@@ -259,11 +259,11 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
       }
     }
 
-    // ── Diğer türler: çoklu islem_stok satırları ──────────────────────────
-    if (!isMalzemeGider && stokEkle && stokSatirlar.length > 0) {
+    // ── Gelir: çoklu islem_stok satırları (stoktan çıkış) ─────────────────
+    if (form.tur === "gelir" && stokEkle && stokSatirlar.length > 0) {
       const gecerli = stokSatirlar.filter(s => s.malzeme_id && parseFloat(s.miktar) > 0)
       if (gecerli.length > 0) {
-        const stokTur = form.tur === "gider" ? "giris" : "cikis"
+        const stokTur = "cikis"
         await supabase.from("islem_stok").insert(
           gecerli.map(s => ({
             islem_id: islemId,
@@ -447,8 +447,8 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
             </div>
           </>)}
 
-          {/* ── Diğer türler: islem_stok çoklu satır ─────────────────────── */}
-          {!isMalzemeGider && (
+          {/* ── Gelir: stoktan çıkış ─────────────────────────────────────── */}
+          {form.tur === "gelir" && (
             <div className="space-y-3 border border-border rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <input
