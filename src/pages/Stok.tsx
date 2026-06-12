@@ -49,7 +49,7 @@ export function Stok() {
     const { data } = await supabase
       .from("malzemeler")
       .select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari, tarih, faturali)")
-      .order("ad")
+      .order("created_at", { ascending: false })
     setMalzemeler((data ?? []) as MalzemeRow[])
     setLoading(false)
   }
@@ -94,11 +94,19 @@ export function Stok() {
     load()
   }
 
-  const filtered = malzemeler.filter(m => {
-    const matchSearch = m.ad.toLowerCase().includes(search.toLowerCase())
-    const matchKat = filterKat === "tumu" || m.kategori === filterKat
-    return matchSearch && matchKat
-  })
+  const filtered = malzemeler
+    .filter(m => {
+      const matchSearch = m.ad.toLowerCase().includes(search.toLowerCase())
+      const matchKat = filterKat === "tumu" || m.kategori === filterKat
+      return matchSearch && matchKat
+    })
+    .sort((a, b) => {
+      const biten = (x: MalzemeRow) => x.miktar <= 0
+      if (biten(a) !== biten(b)) return biten(a) ? 1 : -1
+      const dateA = a.kaynak_islem?.tarih ?? a.created_at
+      const dateB = b.kaynak_islem?.tarih ?? b.created_at
+      return dateB.localeCompare(dateA)
+    })
 
   const kritik = malzemeler.filter(m => m.miktar <= m.min_miktar).length
   // Toplam değer = bağlı gider işlemlerinin tutarı toplamı
