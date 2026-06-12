@@ -46,6 +46,8 @@ export function Finans() {
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
+  const [filterGelirKat, setFilterGelirKat] = useState("tumu")
+  const [filterGiderKat, setFilterGiderKat] = useState("tumu")
   const [islemDialogOpen, setIslemDialogOpen] = useState(false)
   const [odemeDialogOpen, setOdemeDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Islem | null>(null)
@@ -82,11 +84,20 @@ export function Finans() {
     load()
   }
 
-  const applyFilter = (list: Islem[]) =>
-    list.filter(i => filterOdeme === "tumu" || i.odeme_durumu === filterOdeme)
+  const gelirlerTumu = islemler.filter(i => i.tur === "gelir")
+  const giderlerTumu = islemler.filter(i => i.tur === "gider")
 
-  const gelirler = applyFilter(islemler.filter(i => i.tur === "gelir"))
-  const giderler = applyFilter(islemler.filter(i => i.tur === "gider"))
+  const gelirKategoriler = [...new Set(gelirlerTumu.map(i => i.kategori))].sort()
+  const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
+
+  const gelirler = gelirlerTumu.filter(i =>
+    (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
+    (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
+  )
+  const giderler = giderlerTumu.filter(i =>
+    (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
+    (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
+  )
 
   const toplamGelir = islemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
   const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
@@ -220,7 +231,18 @@ export function Finans() {
                 <CardTitle className="text-base text-green-600">Gelir</CardTitle>
                 <span className="text-base font-bold text-green-600">{formatCurrency(toplamGelir)}</span>
               </div>
-              <p className="text-xs text-muted-foreground">{gelirler.length} kayıt</p>
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-xs text-muted-foreground">{gelirler.length} kayıt</p>
+                {gelirKategoriler.length > 1 && (
+                  <Select value={filterGelirKat} onValueChange={setFilterGelirKat}>
+                    <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tumu">Tüm Tipler</SelectItem>
+                      {gelirKategoriler.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="pt-0 px-0">
               {gelirler.length === 0 ? (
@@ -248,7 +270,18 @@ export function Finans() {
                 <CardTitle className="text-base text-red-500">Gider</CardTitle>
                 <span className="text-base font-bold text-red-500">{formatCurrency(toplamGider)}</span>
               </div>
-              <p className="text-xs text-muted-foreground">{giderler.length} kayıt</p>
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-xs text-muted-foreground">{giderler.length} kayıt</p>
+                {giderKategoriler.length > 1 && (
+                  <Select value={filterGiderKat} onValueChange={setFilterGiderKat}>
+                    <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tumu">Tüm Tipler</SelectItem>
+                      {giderKategoriler.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="pt-0 px-0">
               {giderler.length === 0 ? (
