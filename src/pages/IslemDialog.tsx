@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
 
-const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Fatura", "Vergi", "Diğer"]
+const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Fatura", "Vergi", "Noter", "Harç", "Diğer"]
 const MALZEME_KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
