@@ -98,7 +98,7 @@ export function Finans() {
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([key, v]) => ({
         key,
-        label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "long", year: "numeric" }),
+        label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "short", year: "numeric" }),
         gelir: v.gelir,
         gider: v.gider,
         net: v.gelir - v.gider,
@@ -254,34 +254,34 @@ export function Finans() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-0 px-0">
-            <table className="w-full text-sm">
+          <CardContent className="pt-0 px-0 overflow-x-auto">
+            <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-border text-xs text-muted-foreground">
-                  <th className="text-left font-medium px-6 py-2">Ay</th>
-                  <th className="text-right font-medium px-4 py-2">Gelir</th>
-                  <th className="text-right font-medium px-4 py-2">Gider</th>
-                  <th className="text-right font-medium px-6 py-2">Net</th>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left font-medium px-4 py-2">Ay</th>
+                  <th className="text-right font-medium px-3 py-2">Gelir</th>
+                  <th className="text-right font-medium px-3 py-2">Gider</th>
+                  <th className="text-right font-medium px-4 py-2">Net</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {ayOzetleri.map(row => (
                   <tr key={row.key} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-6 py-2.5 text-sm capitalize">{row.label}</td>
-                    <td className="px-4 py-2.5 text-right text-green-600 font-medium">{formatCurrency(row.gelir)}</td>
-                    <td className="px-4 py-2.5 text-right text-red-500 font-medium">{formatCurrency(row.gider)}</td>
-                    <td className={`px-6 py-2.5 text-right font-semibold ${row.net >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    <td className="px-4 py-2 capitalize whitespace-nowrap">{row.label}</td>
+                    <td className="px-3 py-2 text-right text-green-600 font-medium whitespace-nowrap">{formatCurrency(row.gelir)}</td>
+                    <td className="px-3 py-2 text-right text-red-500 font-medium whitespace-nowrap">{formatCurrency(row.gider)}</td>
+                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${row.net >= 0 ? "text-green-600" : "text-red-500"}`}>
                       {row.net >= 0 ? "+" : ""}{formatCurrency(row.net)}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-border bg-muted/30 text-xs font-semibold">
-                  <td className="px-6 py-2">Toplam</td>
-                  <td className="px-4 py-2 text-right text-green-600">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gelir, 0))}</td>
-                  <td className="px-4 py-2 text-right text-red-500">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gider, 0))}</td>
-                  <td className={`px-6 py-2 text-right ${ayOzetleri.reduce((s, r) => s + r.net, 0) >= 0 ? "text-green-600" : "text-red-500"}`}>
+                <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+                  <td className="px-4 py-2">Toplam</td>
+                  <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gelir, 0))}</td>
+                  <td className="px-3 py-2 text-right text-red-500 whitespace-nowrap">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gider, 0))}</td>
+                  <td className={`px-4 py-2 text-right whitespace-nowrap ${ayOzetleri.reduce((s, r) => s + r.net, 0) >= 0 ? "text-green-600" : "text-red-500"}`}>
                     {(() => { const n = ayOzetleri.reduce((s, r) => s + r.net, 0); return (n >= 0 ? "+" : "") + formatCurrency(n) })()}
                   </td>
                 </tr>
