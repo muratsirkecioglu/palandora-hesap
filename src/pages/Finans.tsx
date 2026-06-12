@@ -48,6 +48,7 @@ export function Finans() {
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
   const [filterGiderKat, setFilterGiderKat] = useState("tumu")
+  const [ozetFiltre, setOzetFiltre] = useState<"son6ay" | "tumzamanlar">("son6ay")
   const [islemDialogOpen, setIslemDialogOpen] = useState(false)
   const [odemeDialogOpen, setOdemeDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Islem | null>(null)
@@ -83,6 +84,27 @@ export function Finans() {
     await supabase.from("islemler").delete().eq("id", id)
     load()
   }
+
+  const ayOzetleri = (() => {
+    const map = new Map<string, { gelir: number; gider: number }>()
+    for (const i of islemler) {
+      const key = i.tarih.slice(0, 7)
+      if (!map.has(key)) map.set(key, { gelir: 0, gider: 0 })
+      const e = map.get(key)!
+      if (i.tur === "gelir") e.gelir += i.tutar
+      else e.gider += i.tutar
+    }
+    const rows = Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, v]) => ({
+        key,
+        label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "long", year: "numeric" }),
+        gelir: v.gelir,
+        gider: v.gider,
+        net: v.gelir - v.gider,
+      }))
+    return ozetFiltre === "son6ay" ? rows.slice(0, 6) : rows
+  })()
 
   const gelirlerTumu = islemler.filter(i => i.tur === "gelir")
   const giderlerTumu = islemler.filter(i => i.tur === "gider")
@@ -209,6 +231,65 @@ export function Finans() {
           <p className={`text-lg font-bold ${odenecek > 0 ? "text-orange-500" : "text-muted-foreground"}`}>{formatCurrency(odenecek)}</p>
         </CardContent></Card>
       </div>
+
+      {/* Aylık özet tablo */}
+      {!loading && ayOzetleri.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">Aylık Özet</CardTitle>
+              <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                <button
+                  onClick={() => setOzetFiltre("son6ay")}
+                  className={`px-3 py-1.5 transition-colors ${ozetFiltre === "son6ay" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+                >
+                  Son 6 Ay
+                </button>
+                <button
+                  onClick={() => setOzetFiltre("tumzamanlar")}
+                  className={`px-3 py-1.5 transition-colors border-l border-border ${ozetFiltre === "tumzamanlar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+                >
+                  Tüm Zamanlar
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="text-left font-medium px-6 py-2">Ay</th>
+                  <th className="text-right font-medium px-4 py-2">Gelir</th>
+                  <th className="text-right font-medium px-4 py-2">Gider</th>
+                  <th className="text-right font-medium px-6 py-2">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {ayOzetleri.map(row => (
+                  <tr key={row.key} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-6 py-2.5 text-sm capitalize">{row.label}</td>
+                    <td className="px-4 py-2.5 text-right text-green-600 font-medium">{formatCurrency(row.gelir)}</td>
+                    <td className="px-4 py-2.5 text-right text-red-500 font-medium">{formatCurrency(row.gider)}</td>
+                    <td className={`px-6 py-2.5 text-right font-semibold ${row.net >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      {row.net >= 0 ? "+" : ""}{formatCurrency(row.net)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border bg-muted/30 text-xs font-semibold">
+                  <td className="px-6 py-2">Toplam</td>
+                  <td className="px-4 py-2 text-right text-green-600">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gelir, 0))}</td>
+                  <td className="px-4 py-2 text-right text-red-500">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gider, 0))}</td>
+                  <td className={`px-6 py-2 text-right ${ayOzetleri.reduce((s, r) => s + r.net, 0) >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {(() => { const n = ayOzetleri.reduce((s, r) => s + r.net, 0); return (n >= 0 ? "+" : "") + formatCurrency(n) })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filtre */}
       <div className="flex justify-end">
