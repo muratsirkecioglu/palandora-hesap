@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, CreditCard, Package } from "lucide-react"
-import { supabase, type Islem, type Malzeme } from "@/lib/supabase"
+import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +42,7 @@ export function Finans() {
   const { isAdmin, user } = useAuth()
   const [islemler, setIslemler] = useState<Islem[]>([])
   const [malzemeler, setMalzemeler] = useState<Malzeme[]>([])
+  const [hesaplar, setHesaplar] = useState<Hesap[]>([])
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
@@ -55,14 +56,16 @@ export function Finans() {
     const islemQ = supabase.from("islemler").select("*").order("tarih", { ascending: false })
     if (!isAdmin) islemQ.eq("kullanici_id", user!.id)
 
-    const [{ data: islemData }, { data: malzemeData }, { data: stokData }] = await Promise.all([
+    const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }] = await Promise.all([
       islemQ,
       supabase.from("malzemeler").select("*").order("ad"),
       supabase.from("islem_stok").select("islem_id"),
+      supabase.from("hesaplar").select("*").order("ad"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
     setMalzemeler((malzemeData ?? []) as Malzeme[])
+    setHesaplar((hesapData ?? []) as Hesap[])
     setStokIslemIds(new Set((stokData ?? []).map((s: { islem_id: string }) => s.islem_id)))
     setLoading(false)
   }
@@ -98,6 +101,7 @@ export function Finans() {
     const kalan = islem.tutar - islem.odened_tutar
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
+    const hesapAd = islem.hesap_id ? hesaplar.find(h => h.id === islem.hesap_id)?.ad : null
     return (
       <div className="py-3 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -114,6 +118,7 @@ export function Finans() {
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {formatDate(islem.tarih)} · {islem.kategori}
+            {hesapAd && ` · ${hesapAd}`}
             {islem.vade_tarihi && ` · Vade: ${formatDate(islem.vade_tarihi)}`}
           </p>
           {islem.odeme_durumu !== "odendi" && (
@@ -267,6 +272,7 @@ export function Finans() {
         onClose={() => setIslemDialogOpen(false)}
         editing={editing}
         malzemeler={malzemeler}
+        hesaplar={hesaplar}
         onSaved={load}
       />
       <OdemeDialog

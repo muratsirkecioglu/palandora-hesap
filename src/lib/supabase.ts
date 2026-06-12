@@ -23,6 +23,19 @@ export interface AppUser {
   created_at: string
 }
 
+export interface Hesap {
+  id: string
+  ad: string
+  tur: "banka" | "kasa" | "kredi_karti" | "diger"
+  para_birimi: string
+  bakiye_baslangic: number
+  aktif: boolean
+  notlar: string | null
+  kullanici_id: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Islem {
   id: string
   tarih: string
@@ -31,8 +44,9 @@ export interface Islem {
   tur: "gelir" | "gider"
   kategori: string
   kullanici_id: string
+  hesap_id: string | null
   odeme_durumu: "odendi" | "kismi_odendi" | "beklemede"
-  odenen_tutar: number
+  odened_tutar: number
   vade_tarihi: string | null
   notlar: string | null
   adam_saat: number | null

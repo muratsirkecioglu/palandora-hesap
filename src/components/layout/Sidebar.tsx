@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button"
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Panel" },
   { to: "/finans", icon: TrendingUp, label: "Finans" },
+  { to: "/hesaplar", icon: Landmark, label: "Hesaplar" },
   { to: "/stok", icon: Package, label: "Stok" },
-  { to: "/demirbaslar", icon: Landmark, label: "Demirbaşlar" },
+  { to: "/demirbaslar", icon: Building2, label: "Demirbaşlar" },
 ]
 
 const adminItems = [

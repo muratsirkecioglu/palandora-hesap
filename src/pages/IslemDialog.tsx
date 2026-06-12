@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type Malzeme } from "@/lib/supabase"
+import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,7 @@ interface Props {
   onClose: () => void
   editing: Islem | null
   malzemeler: Malzeme[]
+  hesaplar: Hesap[]
   onSaved: () => void
 }
 
@@ -56,9 +57,10 @@ const defaultForm = {
   adam_saat: "",
   nakliye_tutari: "",
   faturali: true,
+  hesap_id: "",
 }
 
-export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Props) {
+export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSaved }: Props) {
   const { user } = useAuth()
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
@@ -99,6 +101,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
         adam_saat: editing.adam_saat != null ? String(editing.adam_saat) : "",
         nakliye_tutari: editing.nakliye_tutari != null ? String(editing.nakliye_tutari) : "",
         faturali: editing.faturali ?? true,
+        hesap_id: editing.hesap_id ?? "",
       })
 
       if (editing.tur === "gider" && editing.kategori === "Malzeme") {
@@ -194,6 +197,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
       adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
       nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
       faturali: form.faturali,
+      hesap_id: form.hesap_id || null,
       kullanici_id: user!.id,
     }
 
@@ -298,6 +302,21 @@ export function IslemDialog({ open, onClose, editing, malzemeler, onSaved }: Pro
               </Select>
             </div>
           </div>
+
+          {hesaplar.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Hesap (isteğe bağlı)</Label>
+              <Select value={form.hesap_id || "__none__"} onValueChange={v => setF("hesap_id", v === "__none__" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Hesap seçin..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Hesap seçilmedi —</SelectItem>
+                  {hesaplar.filter(h => h.aktif).map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.ad}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Açıklama</Label>
