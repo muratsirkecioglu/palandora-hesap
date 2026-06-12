@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info } from "lucide-react"
 import { supabase, type Demirbase, type AppUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,9 @@ const DURUM_VARIANT: Record<string, "success" | "warning" | "destructive" | "out
   devredildi: "outline",
 }
 
+interface KaynakIslem { tutar: number; tarih: string }
+type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
+
 const defaultForm = {
   ad: "", kategori: "Bilgisayar", marka: "", model: "", seri_no: "",
   alis_tarihi: "", alis_fiyati: "", konum: "", durum: "aktif" as Demirbase["durum"],
@@ -34,11 +37,11 @@ const defaultForm = {
 
 export function Demirbaslar() {
   const { isAdmin } = useAuth()
-  const [kayitlar, setKayitlar] = useState<Demirbase[]>([])
+  const [kayitlar, setKayitlar] = useState<DemirbasRow[]>([])
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Demirbase | null>(null)
+  const [editing, setEditing] = useState<DemirbasRow | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
   const [filterKat, setFilterKat] = useState("tumu")
@@ -48,10 +51,10 @@ export function Demirbaslar() {
   async function load() {
     setLoading(true)
     const [{ data: db }, { data: ku }] = await Promise.all([
-      supabase.from("demirbaslar").select("*").order("ad"),
+      supabase.from("demirbaslar").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, tarih)").order("ad"),
       supabase.from("kullanicilar").select("*").eq("aktif", true).order("ad_soyad"),
     ])
-    setKayitlar((db ?? []) as Demirbase[])
+    setKayitlar((db ?? []) as DemirbasRow[])
     setKullanicilar((ku ?? []) as AppUser[])
     setLoading(false)
   }
@@ -62,12 +65,14 @@ export function Demirbaslar() {
 
   function openNew() { setEditing(null); setForm(defaultForm); setDialogOpen(true) }
 
-  function openEdit(d: Demirbase) {
+  function openEdit(d: DemirbasRow) {
     setEditing(d)
+    const alisFiyati = d.kaynak_islem ? String(d.kaynak_islem.tutar) : (d.alis_fiyati != null ? String(d.alis_fiyati) : "")
+    const alisTarihi = d.kaynak_islem ? d.kaynak_islem.tarih : (d.alis_tarihi ?? "")
     setForm({
       ad: d.ad, kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "",
-      seri_no: d.seri_no ?? "", alis_tarihi: d.alis_tarihi ?? "",
-      alis_fiyati: d.alis_fiyati != null ? String(d.alis_fiyati) : "",
+      seri_no: d.seri_no ?? "", alis_tarihi: alisTarihi,
+      alis_fiyati: alisFiyati,
       konum: d.konum ?? "", durum: d.durum,
       zimmet_kullanici_id: d.zimmet_kullanici_id ?? "",
       zimmet_tarihi: d.zimmet_tarihi ?? "",
@@ -107,9 +112,12 @@ export function Demirbaslar() {
     load()
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Bu demirbaş kaydını silmek istediğinize emin misiniz?")) return
-    await supabase.from("demirbaslar").delete().eq("id", id)
+  async function handleDelete(d: DemirbasRow) {
+    const msg = d.kaynak_islem
+      ? "Bu demirbaşı silmek istediğinize emin misiniz?\nBağlı gider kaydı da silinecektir."
+      : "Bu demirbaş kaydını silmek istediğinize emin misiniz?"
+    if (!confirm(msg)) return
+    await supabase.from("demirbaslar").delete().eq("id", d.id)
     load()
   }
 
@@ -125,7 +133,10 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
-  const toplamDeger = kayitlar.filter(d => d.alis_fiyati).reduce((s, d) => s + (d.alis_fiyati ?? 0), 0)
+  const toplamDeger = kayitlar.reduce((s, d) => {
+    const fiyat = d.kaynak_islem?.tutar ?? d.alis_fiyati ?? 0
+    return s + fiyat
+  }, 0)
   const garantiUyari = kayitlar.filter(d => d.garanti_bitis && d.garanti_bitis <= today && d.durum === "aktif").length
   const bakimUyari = kayitlar.filter(d => d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today && d.durum === "aktif").length
 
@@ -145,6 +156,13 @@ export function Demirbaslar() {
             <Plus className="h-4 w-4" /> Yeni Demirbaş
           </Button>
         )}
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+        <p>
+          Satın alma kaydı oluşturmak için <strong>Finans → Yeni İşlem → Gider → Demirbaş</strong> kategorisini kullanın. Alış fiyatı ve tarihi otomatik aktarılır.
+        </p>
       </div>
 
       {/* Özet */}
@@ -199,6 +217,8 @@ export function Demirbaslar() {
                 const zimmetli = kullaniciBul(d.zimmet_kullanici_id)
                 const garantiBitti = d.garanti_bitis && d.garanti_bitis <= today
                 const bakimGerekli = d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today
+                const fiyat = d.kaynak_islem?.tutar ?? d.alis_fiyati
+                const tarih = d.kaynak_islem?.tarih ?? d.alis_tarihi
 
                 return (
                   <div key={d.id} className="py-3 flex items-start justify-between gap-3">
@@ -207,12 +227,12 @@ export function Demirbaslar() {
                         <p className="font-medium text-sm">{d.ad}</p>
                         <Badge variant={DURUM_VARIANT[d.durum]} className="text-xs">{DURUMLAR.find(x => x.value === d.durum)?.label}</Badge>
                         <Badge variant="outline" className="text-xs">{d.kategori}</Badge>
-                        {(garantiBitti || bakimGerekli) && (
-                          <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
-                        )}
+                        {d.kaynak_islem && <Badge variant="outline" className="text-xs text-blue-500 border-blue-200">Gider bağlı</Badge>}
+                        {(garantiBitti || bakimGerekli) && <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
                         {(d.marka || d.model) && <p>{[d.marka, d.model].filter(Boolean).join(" · ")}{d.seri_no ? ` · S/N: ${d.seri_no}` : ""}</p>}
+                        {tarih && <p>Alış: {formatDate(tarih)}</p>}
                         {d.konum && <p>📍 {d.konum}</p>}
                         {zimmetli && (
                           <p className="flex items-center gap-1">
@@ -233,15 +253,15 @@ export function Demirbaslar() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {d.alis_fiyati != null && (
-                        <p className="text-sm font-semibold mr-1">{formatCurrency(d.alis_fiyati)}</p>
+                      {fiyat != null && (
+                        <p className="text-sm font-semibold mr-1">{formatCurrency(fiyat)}</p>
                       )}
                       {isAdmin && (
                         <>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(d.id)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(d)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </>
@@ -263,7 +283,13 @@ export function Demirbaslar() {
           </DialogHeader>
           <div className="space-y-4 pt-2">
 
-            {/* Temel */}
+            {editing?.kaynak_islem && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <p>Alış fiyatı ve tarihi bağlı gider işleminden geliyor. Değiştirmek için Finans sayfasından ilgili işlemi düzenleyin.</p>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Demirbaş Adı *</Label>
               <Input value={form.ad} onChange={e => f("ad", e.target.value)} placeholder="ör. MacBook Pro 14" />
@@ -307,11 +333,11 @@ export function Demirbaslar() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Alış Tarihi</Label>
-                <Input type="date" value={form.alis_tarihi} onChange={e => f("alis_tarihi", e.target.value)} />
+                <Input type="date" value={form.alis_tarihi} onChange={e => f("alis_tarihi", e.target.value)} disabled={!!editing?.kaynak_islem} />
               </div>
               <div className="space-y-1.5">
                 <Label>Alış Fiyatı (₺)</Label>
-                <Input type="number" min="0" step="0.01" value={form.alis_fiyati} onChange={e => f("alis_fiyati", e.target.value)} placeholder="0.00" />
+                <Input type="number" min="0" step="0.01" value={form.alis_fiyati} onChange={e => f("alis_fiyati", e.target.value)} placeholder="0.00" disabled={!!editing?.kaynak_islem} />
               </div>
             </div>
 

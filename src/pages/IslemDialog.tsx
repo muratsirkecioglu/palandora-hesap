@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
 
-const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Fatura", "Vergi", "Noter", "Harç", "Muhasebe", "Diğer"]
+const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Demirbaş", "Fatura", "Vergi", "Noter", "Harç", "Muhasebe", "Diğer"]
 const MALZEME_KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
+const DEMIRBAŞ_KATEGORILER = ["Bilgisayar", "Mobilya", "Araç", "Ekipman", "Yazılım", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
 interface StokSatir {
@@ -33,6 +34,26 @@ const defaultMalzemeAlt: MalzemeAlt = {
   birim: "Adet",
   miktar: "",
   min_miktar: "0",
+}
+
+interface DemirbasAlt {
+  ad: string
+  db_kategori: string
+  marka: string
+  model: string
+  seri_no: string
+  konum: string
+  garanti_bitis: string
+}
+
+const defaultDemirbasAlt: DemirbasAlt = {
+  ad: "",
+  db_kategori: "Bilgisayar",
+  marka: "",
+  model: "",
+  seri_no: "",
+  konum: "",
+  garanti_bitis: "",
 }
 
 interface Props {
@@ -67,10 +88,13 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
   const [stokEkle, setStokEkle] = useState(false)
   const [malzemeAlt, setMalzemeAlt] = useState<MalzemeAlt>(defaultMalzemeAlt)
   const [linkedMalzemeId, setLinkedMalzemeId] = useState<string | null>(null)
+  const [demirbasAlt, setDemirbasAlt] = useState<DemirbasAlt>(defaultDemirbasAlt)
+  const [linkedDemirbasId, setLinkedDemirbasId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isMalzemeGider = form.tur === "gider" && form.kategori === "Malzeme"
+  const isDemirbasGider = form.tur === "gider" && form.kategori === "Demirbaş"
 
   // Hesaplanan birim fiyat = (tutar - nakliye) / miktar
   const hesapBirimFiyat = useMemo(() => {
@@ -86,6 +110,8 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
     setError(null)
     setLinkedMalzemeId(null)
     setMalzemeAlt(defaultMalzemeAlt)
+    setLinkedDemirbasId(null)
+    setDemirbasAlt(defaultDemirbasAlt)
 
     if (editing) {
       setForm({
@@ -105,21 +131,19 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
       })
 
       if (editing.tur === "gider" && editing.kategori === "Malzeme") {
-        supabase
-          .from("malzemeler")
-          .select("*")
-          .eq("kaynak_islem_id", editing.id)
-          .maybeSingle()
+        supabase.from("malzemeler").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
           .then(({ data }) => {
             if (data) {
               setLinkedMalzemeId(data.id)
-              setMalzemeAlt({
-                ad: data.ad,
-                mal_kategori: data.kategori,
-                birim: data.birim,
-                miktar: String(data.miktar),
-                min_miktar: String(data.min_miktar),
-              })
+              setMalzemeAlt({ ad: data.ad, mal_kategori: data.kategori, birim: data.birim, miktar: String(data.miktar), min_miktar: String(data.min_miktar) })
+            }
+          })
+      } else if (editing.tur === "gider" && editing.kategori === "Demirbaş") {
+        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              setLinkedDemirbasId(data.id)
+              setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "" })
             }
           })
       } else {
@@ -152,6 +176,10 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
     setMalzemeAlt(prev => ({ ...prev, [field]: value }))
   }
 
+  function setDA(field: keyof DemirbasAlt, value: string) {
+    setDemirbasAlt(prev => ({ ...prev, [field]: value }))
+  }
+
   function addStokSatir() {
     setStokSatirlar(prev => [...prev, { malzeme_id: "", miktar: "", birim_fiyat: "" }])
   }
@@ -175,6 +203,10 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
     if (!form.aciklama || !form.tutar || !form.tarih) return
     if (isMalzemeGider && (!malzemeAlt.ad || !malzemeAlt.miktar)) {
       setError("Stok bilgisi için malzeme adı ve miktar zorunludur.")
+      return
+    }
+    if (isDemirbasGider && !demirbasAlt.ad) {
+      setError("Demirbaş adı zorunludur.")
       return
     }
 
@@ -225,6 +257,30 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
           islem_id: islemId, tarih: form.tarih, tutar: parseFloat(form.ilk_odeme),
           aciklama: "İlk ödeme", kullanici_id: user!.id,
         })
+      }
+    }
+
+    // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
+    if (isDemirbasGider) {
+      const demirbasPayload = {
+        ad: demirbasAlt.ad,
+        kategori: demirbasAlt.db_kategori,
+        marka: demirbasAlt.marka || null,
+        model: demirbasAlt.model || null,
+        seri_no: demirbasAlt.seri_no || null,
+        konum: demirbasAlt.konum || null,
+        garanti_bitis: demirbasAlt.garanti_bitis || null,
+        alis_fiyati: toplam,
+        alis_tarihi: form.tarih,
+        durum: "aktif" as const,
+        kaynak_islem_id: islemId,
+        kullanici_id: user!.id,
+        updated_at: new Date().toISOString(),
+      }
+      if (linkedDemirbasId) {
+        await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
+      } else {
+        await supabase.from("demirbaslar").insert(demirbasPayload)
       }
     }
 
@@ -435,6 +491,62 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
                 <span className="font-medium">{formatCurrency(hesapBirimFiyat)} / {malzemeAlt.birim}</span>
               </div>
             )}
+
+            <div className="relative flex items-center py-1">
+              <div className="flex-1 border-t border-border" />
+            </div>
+          </>)}
+
+          {/* ── Demirbaş Gider ─────────────────────────────────────────── */}
+          {isDemirbasGider && (<>
+            <div className="relative flex items-center gap-2 py-1">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-xs text-muted-foreground shrink-0">Demirbaş Bilgisi</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Demirbaş Adı *</Label>
+              <Input value={demirbasAlt.ad} onChange={e => setDA("ad", e.target.value)} placeholder="ör. MacBook Pro 14, Çalışma Masası" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Kategori</Label>
+                <Select value={demirbasAlt.db_kategori} onValueChange={v => setDA("db_kategori", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DEMIRBAŞ_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Marka</Label>
+                <Input value={demirbasAlt.marka} onChange={e => setDA("marka", e.target.value)} placeholder="Apple, IKEA..." />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Model</Label>
+                <Input value={demirbasAlt.model} onChange={e => setDA("model", e.target.value)} placeholder="Model adı" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Seri No</Label>
+                <Input value={demirbasAlt.seri_no} onChange={e => setDA("seri_no", e.target.value)} placeholder="S/N..." />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Konum</Label>
+                <Input value={demirbasAlt.konum} onChange={e => setDA("konum", e.target.value)} placeholder="Ofis / Depo" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Garanti Bitiş</Label>
+                <Input type="date" value={demirbasAlt.garanti_bitis} onChange={e => setDA("garanti_bitis", e.target.value)} />
+              </div>
+            </div>
 
             <div className="relative flex items-center py-1">
               <div className="flex-1 border-t border-border" />

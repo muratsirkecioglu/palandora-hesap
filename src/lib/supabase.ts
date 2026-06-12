@@ -93,6 +93,7 @@ export interface Demirbase {
   son_bakim_tarihi: string | null
   sonraki_bakim_tarihi: string | null
   notlar: string | null
+  kaynak_islem_id: string | null
   created_at: string
   updated_at: string
 }
