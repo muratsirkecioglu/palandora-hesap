@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react"
+import { Pencil, Trash2, Loader2, AlertTriangle, Info } from "lucide-react"
 import { supabase, type Malzeme } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -14,9 +14,13 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 const KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
-const defaultForm = {
-  ad: "", kategori: "Hammadde", miktar: "", birim: "Adet",
-  min_miktar: "", birim_fiyat: "", aciklama: "", alis_tarihi: "", faturali: true, nakliye_tutari: "",
+interface EditForm {
+  ad: string
+  kategori: string
+  birim: string
+  min_miktar: string
+  aciklama: string
+  faturali: boolean
 }
 
 export function Stok() {
@@ -25,7 +29,10 @@ export function Stok() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Malzeme | null>(null)
-  const [form, setForm] = useState(defaultForm)
+  const [form, setForm] = useState<EditForm>({
+    ad: "", kategori: "Hammadde", birim: "Adet",
+    min_miktar: "", aciklama: "", faturali: true,
+  })
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState("")
   const [filterKat, setFilterKat] = useState("tumu")
@@ -39,107 +46,42 @@ export function Stok() {
 
   useEffect(() => { load() }, [])
 
-  function f(field: string, value: string) {
+  function f(field: keyof EditForm, value: string | boolean) {
     setForm(prev => ({ ...prev, [field]: value }))
-  }
-
-  function openNew() {
-    setEditing(null)
-    setForm(defaultForm)
-    setDialogOpen(true)
   }
 
   function openEdit(m: Malzeme) {
     setEditing(m)
     setForm({
-      ad: m.ad, kategori: m.kategori, miktar: String(m.miktar),
-      birim: m.birim, min_miktar: String(m.min_miktar),
-      birim_fiyat: String(m.birim_fiyat), aciklama: m.aciklama ?? "",
-      alis_tarihi: m.alis_tarihi ?? "", faturali: m.faturali,
-      nakliye_tutari: m.nakliye_tutari != null ? String(m.nakliye_tutari) : "",
+      ad: m.ad,
+      kategori: m.kategori,
+      birim: m.birim,
+      min_miktar: String(m.min_miktar),
+      aciklama: m.aciklama ?? "",
+      faturali: m.faturali,
     })
     setDialogOpen(true)
   }
 
   async function handleSave() {
-    if (!form.ad || !form.miktar) return
+    if (!editing || !form.ad) return
     setSaving(true)
-
-    const miktar = parseFloat(form.miktar) || 0
-    const birimFiyat = parseFloat(form.birim_fiyat) || 0
-    const nakliye = form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null
-    const toplamTutar = miktar * birimFiyat + (nakliye ?? 0)
-    const tarih = form.alis_tarihi || new Date().toISOString().slice(0, 10)
-
-    const payload = {
-      ad: form.ad, kategori: form.kategori,
-      miktar, birim: form.birim,
+    await supabase.from("malzemeler").update({
+      ad: form.ad,
+      kategori: form.kategori,
+      birim: form.birim,
       min_miktar: parseFloat(form.min_miktar) || 0,
-      birim_fiyat: birimFiyat,
       aciklama: form.aciklama,
-      alis_tarihi: form.alis_tarihi || null,
       faturali: form.faturali,
-      nakliye_tutari: nakliye,
-      kullanici_id: user!.id,
-    }
-
-    if (editing) {
-      await supabase.from("malzemeler")
-        .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq("id", editing.id)
-
-      // Bağlı gider işlemini de güncelle
-      if (editing.kaynak_islem_id) {
-        await supabase.from("islemler").update({
-          tarih,
-          aciklama: form.ad + " alımı",
-          tutar: toplamTutar,
-          odenen_tutar: toplamTutar,
-        }).eq("id", editing.kaynak_islem_id)
-      }
-    } else {
-      // Malzeme oluştur
-      const { data: malzeme } = await supabase
-        .from("malzemeler").insert(payload).select().single()
-
-      if (malzeme) {
-        // Eşlenik gider işlemi oluştur
-        const { data: islem } = await supabase.from("islemler").insert({
-          tarih,
-          aciklama: form.ad + " alımı",
-          tutar: toplamTutar,
-          tur: "gider",
-          kategori: "Malzeme",
-          odeme_durumu: "odendi",
-          odenen_tutar: toplamTutar,
-          kullanici_id: user!.id,
-        }).select().single()
-
-        if (islem) {
-          // Bağlantıyı kur
-          await supabase.from("malzemeler")
-            .update({ kaynak_islem_id: islem.id })
-            .eq("id", malzeme.id)
-
-          // Ödeme kaydı (OdemeDialog ile tutarlı olsun)
-          await supabase.from("odemeler").insert({
-            islem_id: islem.id,
-            tarih,
-            tutar: toplamTutar,
-            aciklama: "Stok girişi",
-            kullanici_id: user!.id,
-          })
-        }
-      }
-    }
-
+      updated_at: new Date().toISOString(),
+    }).eq("id", editing.id)
     setSaving(false)
     setDialogOpen(false)
     load()
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Bu malzemeyi silmek istediğinize emin misiniz?")) return
+    if (!confirm("Bu malzemeyi silmek istediğinize emin misiniz?\nBağlı gider kaydı da silinecektir.")) return
     await supabase.from("malzemeler").delete().eq("id", id)
     load()
   }
@@ -155,15 +97,18 @@ export function Stok() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Stok Yönetimi</h1>
-          <p className="text-muted-foreground text-sm">Malzeme ve stok takibi</p>
-        </div>
-        <Button onClick={openNew} size="sm">
-          <Plus className="h-4 w-4" />
-          Yeni Malzeme
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold">Stok Yönetimi</h1>
+        <p className="text-muted-foreground text-sm">Malzeme ve stok takibi</p>
+      </div>
+
+      {/* Bilgi notu */}
+      <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+        <p>
+          Yeni malzeme eklemek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.
+          Fiyat ve miktar bilgileri gider kaydından otomatik hesaplanır.
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -209,7 +154,7 @@ export function Stok() {
                 return (
                   <div key={m.id} className="flex items-center justify-between py-3 gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm">{m.ad}</p>
                         {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
                         <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
@@ -217,8 +162,8 @@ export function Stok() {
                           {m.faturali ? "Faturalı" : "Faturasız"}
                         </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Min: {m.min_miktar} {m.birim} · Alış: {formatCurrency(m.birim_fiyat)}/{m.birim}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Min: {m.min_miktar} {m.birim}
                         {m.alis_tarihi && ` · ${formatDate(m.alis_tarihi)}`}
                         {m.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.nakliye_tutari)}`}
                       </p>
@@ -228,8 +173,7 @@ export function Stok() {
                         <p className={`font-semibold text-sm ${kritikMi ? "text-orange-500" : ""}`}>
                           {m.miktar} {m.birim}
                         </p>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(m.miktar * m.birim_fiyat)}</p>
-                        <p className="text-xs font-medium text-blue-600">
+                        <p className="text-xs text-muted-foreground">
                           Maliyet: {formatCurrency(birimMaliyet)}/{m.birim}
                         </p>
                       </div>
@@ -254,10 +198,11 @@ export function Stok() {
         </CardContent>
       </Card>
 
+      {/* Düzenleme dialogu — yalnızca tanımlayıcı bilgiler */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Malzemeyi Düzenle" : "Yeni Malzeme"}</DialogTitle>
+            <DialogTitle>Malzemeyi Düzenle</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
@@ -281,37 +226,19 @@ export function Stok() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Alış Tarihi (isteğe bağlı)</Label>
-              <Input type="date" value={form.alis_tarihi} onChange={e => f("alis_tarihi", e.target.value)} />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>Stok Miktarı</Label>
-                <Input type="number" min="0" value={form.miktar} onChange={e => f("miktar", e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Min. Miktar</Label>
-                <Input type="number" min="0" value={form.min_miktar} onChange={e => f("min_miktar", e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Birim Fiyat (₺)</Label>
-                <Input type="number" min="0" step="0.01" value={form.birim_fiyat} onChange={e => f("birim_fiyat", e.target.value)} placeholder="0.00" />
-              </div>
+              <Label>Min. Stok Miktarı</Label>
+              <Input type="number" min="0" value={form.min_miktar} onChange={e => f("min_miktar", e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
               <Label>Açıklama (isteğe bağlı)</Label>
               <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder="Notlar..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Nakliye Tutarı (₺) — isteğe bağlı</Label>
-              <Input type="number" min="0" step="0.01" value={form.nakliye_tutari} onChange={e => f("nakliye_tutari", e.target.value)} placeholder="0.00" />
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 id="faturali"
                 checked={form.faturali}
-                onChange={e => setForm(p => ({ ...p, faturali: e.target.checked }))}
+                onChange={e => f("faturali", e.target.checked)}
                 className="h-4 w-4 rounded border-border"
               />
               <label htmlFor="faturali" className="text-sm font-medium cursor-pointer">Faturalı</label>
