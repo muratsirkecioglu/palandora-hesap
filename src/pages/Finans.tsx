@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight, FileCheck, FileX } from "lucide-react"
 import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -118,6 +118,10 @@ export function Finans() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{islem.aciklama}</p>
+            {islem.faturali
+              ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" title="Faturalı" />
+              : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" title="Faturasız" />
+            }
             <Badge variant={ODEME_DURUM_VARIANT[islem.odeme_durumu]} className="text-xs">
               {ODEME_DURUM_LABEL[islem.odeme_durumu]}
             </Badge>
@@ -131,9 +135,6 @@ export function Finans() {
                 <ArrowLeftRight className="h-2.5 w-2.5" /> Transfer
               </Badge>
             )}
-            <Badge variant={islem.faturali ? "outline" : "warning"} className="text-xs">
-              {islem.faturali ? "Faturalı" : "Faturasız"}
-            </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {formatDate(islem.tarih)} · {islem.kategori}
