@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Pencil, Trash2, Loader2, AlertTriangle, Info } from "lucide-react"
+import { Pencil, Trash2, Loader2, AlertTriangle, Info, FileCheck, FileX } from "lucide-react"
 import { supabase, type Malzeme } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -171,9 +171,9 @@ export function Stok() {
                         {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
                         <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
                         {m.kaynak_islem && (
-                          <Badge variant={m.kaynak_islem.faturali ? "success" : "warning"} className="text-xs shrink-0">
-                            {m.kaynak_islem.faturali ? "Faturalı" : "Faturasız"}
-                          </Badge>
+                          m.kaynak_islem.faturali
+                            ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" aria-label="Faturalı" />
+                            : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" aria-label="Faturasız" />
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
