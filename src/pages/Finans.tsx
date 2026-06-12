@@ -119,8 +119,8 @@ export function Finans() {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{islem.aciklama}</p>
             {islem.faturali
-              ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" title="Faturalı" />
-              : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" title="Faturasız" />
+              ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" aria-label="Faturalı" />
+              : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" aria-label="Faturasız" />
             }
             <Badge variant={ODEME_DURUM_VARIANT[islem.odeme_durumu]} className="text-xs">
               {ODEME_DURUM_LABEL[islem.odeme_durumu]}
