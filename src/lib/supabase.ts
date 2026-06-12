@@ -26,7 +26,7 @@ export interface AppUser {
 export interface Hesap {
   id: string
   ad: string
-  tur: "banka" | "kasa" | "kredi_karti" | "diger"
+  tur: "banka" | "kasa" | "kredi_karti" | "kisi" | "diger"
   para_birimi: string
   bakiye_baslangic: number
   aktif: boolean

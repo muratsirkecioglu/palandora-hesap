@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User } from "lucide-react"
 import { supabase, type Hesap, type Islem } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,7 @@ const TUR_LABEL: Record<string, string> = {
   banka: "Banka",
   kasa: "Kasa",
   kredi_karti: "Kredi Kartı",
+  kisi: "Kişi",
   diger: "Diğer",
 }
 
@@ -22,6 +23,7 @@ function TurIcon({ tur, className }: { tur: string; className?: string }) {
   if (tur === "banka") return <Landmark className={className} />
   if (tur === "kasa") return <Banknote className={className} />
   if (tur === "kredi_karti") return <CreditCard className={className} />
+  if (tur === "kisi") return <User className={className} />
   return <Wallet className={className} />
 }
 
@@ -235,6 +237,7 @@ export function Hesaplar() {
                     <SelectItem value="banka">Banka</SelectItem>
                     <SelectItem value="kasa">Kasa</SelectItem>
                     <SelectItem value="kredi_karti">Kredi Kartı</SelectItem>
+                    <SelectItem value="kisi">Kişi</SelectItem>
                     <SelectItem value="diger">Diğer</SelectItem>
                   </SelectContent>
                 </Select>
