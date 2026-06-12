@@ -14,24 +14,31 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 const KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
+interface KaynakIslem {
+  tutar: number
+  nakliye_tutari: number | null
+  tarih: string
+  faturali: boolean
+}
+
+type MalzemeRow = Malzeme & { kaynak_islem: KaynakIslem | null }
+
 interface EditForm {
   ad: string
   kategori: string
   birim: string
   min_miktar: string
   aciklama: string
-  faturali: boolean
 }
 
 export function Stok() {
   const { isAdmin, user } = useAuth()
-  const [malzemeler, setMalzemeler] = useState<Malzeme[]>([])
+  const [malzemeler, setMalzemeler] = useState<MalzemeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Malzeme | null>(null)
+  const [editing, setEditing] = useState<MalzemeRow | null>(null)
   const [form, setForm] = useState<EditForm>({
-    ad: "", kategori: "Hammadde", birim: "Adet",
-    min_miktar: "", aciklama: "", faturali: true,
+    ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "", aciklama: "",
   })
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState("")
@@ -39,18 +46,21 @@ export function Stok() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from("malzemeler").select("*").order("ad")
-    setMalzemeler((data ?? []) as Malzeme[])
+    const { data } = await supabase
+      .from("malzemeler")
+      .select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari, tarih, faturali)")
+      .order("ad")
+    setMalzemeler((data ?? []) as MalzemeRow[])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
-  function f(field: keyof EditForm, value: string | boolean) {
+  function f(field: keyof EditForm, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  function openEdit(m: Malzeme) {
+  function openEdit(m: MalzemeRow) {
     setEditing(m)
     setForm({
       ad: m.ad,
@@ -58,7 +68,6 @@ export function Stok() {
       birim: m.birim,
       min_miktar: String(m.min_miktar),
       aciklama: m.aciklama ?? "",
-      faturali: m.faturali,
     })
     setDialogOpen(true)
   }
@@ -72,7 +81,6 @@ export function Stok() {
       birim: form.birim,
       min_miktar: parseFloat(form.min_miktar) || 0,
       aciklama: form.aciklama,
-      faturali: form.faturali,
       updated_at: new Date().toISOString(),
     }).eq("id", editing.id)
     setSaving(false)
@@ -93,7 +101,8 @@ export function Stok() {
   })
 
   const kritik = malzemeler.filter(m => m.miktar <= m.min_miktar).length
-  const toplamDeger = malzemeler.reduce((s, m) => s + m.miktar * m.birim_fiyat, 0)
+  // Toplam değer = bağlı gider işlemlerinin tutarı toplamı
+  const toplamDeger = malzemeler.reduce((s, m) => s + (m.kaynak_islem?.tutar ?? 0), 0)
 
   return (
     <div className="space-y-6">
@@ -102,12 +111,10 @@ export function Stok() {
         <p className="text-muted-foreground text-sm">Malzeme ve stok takibi</p>
       </div>
 
-      {/* Bilgi notu */}
       <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
         <p>
           Yeni malzeme eklemek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.
-          Fiyat ve miktar bilgileri gider kaydından otomatik hesaplanır.
         </p>
       </div>
 
@@ -148,9 +155,14 @@ export function Stok() {
             <div className="divide-y divide-border">
               {filtered.map(m => {
                 const kritikMi = m.miktar <= m.min_miktar
-                const birimMaliyet = m.miktar > 0
-                  ? m.birim_fiyat + (m.nakliye_tutari ?? 0) / m.miktar
-                  : m.birim_fiyat
+                // Birim maliyet = toplam tutar / miktar (nakliye dahil)
+                const birimMaliyet = m.kaynak_islem && m.miktar > 0
+                  ? m.kaynak_islem.tutar / m.miktar
+                  : null
+                // Birim fiyat = (tutar - nakliye) / miktar
+                const birimFiyat = m.kaynak_islem && m.miktar > 0
+                  ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
+                  : null
                 return (
                   <div key={m.id} className="flex items-center justify-between py-3 gap-4">
                     <div className="flex-1 min-w-0">
@@ -158,14 +170,16 @@ export function Stok() {
                         <p className="font-medium text-sm">{m.ad}</p>
                         {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
                         <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
-                        <Badge variant={m.faturali ? "success" : "warning"} className="text-xs shrink-0">
-                          {m.faturali ? "Faturalı" : "Faturasız"}
-                        </Badge>
+                        {m.kaynak_islem && (
+                          <Badge variant={m.kaynak_islem.faturali ? "success" : "warning"} className="text-xs shrink-0">
+                            {m.kaynak_islem.faturali ? "Faturalı" : "Faturasız"}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Min: {m.min_miktar} {m.birim}
-                        {m.alis_tarihi && ` · ${formatDate(m.alis_tarihi)}`}
-                        {m.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.nakliye_tutari)}`}
+                        {m.kaynak_islem?.tarih && ` · ${formatDate(m.kaynak_islem.tarih)}`}
+                        {m.kaynak_islem?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.kaynak_islem.nakliye_tutari)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -173,9 +187,16 @@ export function Stok() {
                         <p className={`font-semibold text-sm ${kritikMi ? "text-orange-500" : ""}`}>
                           {m.miktar} {m.birim}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          Maliyet: {formatCurrency(birimMaliyet)}/{m.birim}
-                        </p>
+                        {birimFiyat !== null && (
+                          <p className="text-xs text-muted-foreground">
+                            {formatCurrency(birimFiyat)}/{m.birim}
+                          </p>
+                        )}
+                        {birimMaliyet !== null && (
+                          <p className="text-xs font-medium text-blue-600">
+                            Maliyet: {formatCurrency(birimMaliyet)}/{m.birim}
+                          </p>
+                        )}
                       </div>
                       {(isAdmin || m.kullanici_id === user?.id) && (
                         <>
@@ -232,16 +253,6 @@ export function Stok() {
             <div className="space-y-1.5">
               <Label>Açıklama (isteğe bağlı)</Label>
               <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder="Notlar..." />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="faturali"
-                checked={form.faturali}
-                onChange={e => f("faturali", e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="faturali" className="text-sm font-medium cursor-pointer">Faturalı</label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>İptal</Button>

@@ -36,6 +36,8 @@ export interface Islem {
   vade_tarihi: string | null
   notlar: string | null
   adam_saat: number | null
+  nakliye_tutari: number | null
+  faturali: boolean
   created_at: string
 }
 
@@ -87,11 +89,7 @@ export interface Malzeme {
   miktar: number
   birim: string
   min_miktar: number
-  birim_fiyat: number
   aciklama: string
-  alis_tarihi: string | null
-  faturali: boolean
-  nakliye_tutari: number | null
   kaynak_islem_id: string | null
   kullanici_id: string
   created_at: string
