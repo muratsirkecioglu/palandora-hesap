@@ -39,7 +39,7 @@ BEGIN
       faturali,
       kullanici_id
     ) VALUES (
-      COALESCE(d.alis_tarihi, CURRENT_DATE::text)::date,
+      COALESCE(d.alis_tarihi::date, CURRENT_DATE),
       d.ad,
       d.alis_fiyati,
       'gider',
