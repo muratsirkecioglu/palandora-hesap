@@ -581,7 +581,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
                           <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
                             <SelectContent>
-                              {malzemeler.map(m => (
+                              {malzemeler.filter(m => m.miktar > 0).map(m => (
                                 <SelectItem key={m.id} value={m.id}>{m.ad} ({m.miktar} {m.birim})</SelectItem>
                               ))}
                             </SelectContent>
