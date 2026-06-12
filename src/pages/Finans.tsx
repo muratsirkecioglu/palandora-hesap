@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, CreditCard, Package } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight } from "lucide-react"
 import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -113,6 +113,11 @@ export function Finans() {
             {hasStok && (
               <Badge variant="outline" className="text-xs gap-1">
                 <Package className="h-2.5 w-2.5" /> Stok
+              </Badge>
+            )}
+            {islem.transfer_eslesme_id && (
+              <Badge variant="outline" className="text-xs gap-1 text-blue-500 border-blue-200">
+                <ArrowLeftRight className="h-2.5 w-2.5" /> Transfer
               </Badge>
             )}
           </div>

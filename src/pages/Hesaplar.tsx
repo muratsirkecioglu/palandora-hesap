@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User, ArrowLeftRight } from "lucide-react"
 import { supabase, type Hesap, type Islem } from "@/lib/supabase"
+import { TransferDialog } from "./TransferDialog"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,6 +48,7 @@ export function Hesaplar() {
   const [hesaplar, setHesaplar] = useState<HesapRow[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
   const [editing, setEditing] = useState<Hesap | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
@@ -135,11 +137,16 @@ export function Hesaplar() {
           <h1 className="text-2xl font-bold">Hesaplar</h1>
           <p className="text-muted-foreground text-sm">Banka, kasa ve diğer hesaplar</p>
         </div>
-        {isAdmin && (
-          <Button onClick={openNew} size="sm">
-            <Plus className="h-4 w-4" /> Yeni Hesap
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)} disabled={hesaplar.filter(h => h.aktif).length < 2}>
+            <ArrowLeftRight className="h-4 w-4" /> Transfer
           </Button>
-        )}
+          {isAdmin && (
+            <Button onClick={openNew} size="sm">
+              <Plus className="h-4 w-4" /> Yeni Hesap
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Özet */}
@@ -282,6 +289,13 @@ export function Hesaplar() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TransferDialog
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        hesaplar={hesaplar}
+        onSaved={load}
+      />
     </div>
   )
 }

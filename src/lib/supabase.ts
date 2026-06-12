@@ -52,6 +52,7 @@ export interface Islem {
   adam_saat: number | null
   nakliye_tutari: number | null
   faturali: boolean
+  transfer_eslesme_id: string | null
   created_at: string
 }
 
