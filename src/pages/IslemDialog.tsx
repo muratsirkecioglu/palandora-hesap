@@ -200,6 +200,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   function setDA(field: keyof DemirbasAlt, value: string) {
     setDemirbasAlt(prev => ({ ...prev, [field]: value }))
+    if (field === "ad") {
+      setForm(prev => ({ ...prev, aciklama: value ? `${value} alım` : "" }))
+    }
   }
 
   function addStokSatir() {
@@ -402,7 +405,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               value={form.aciklama}
               onChange={e => setF("aciklama", e.target.value)}
               placeholder="İşlem açıklaması"
-              disabled={isMalzemeGider}
+              disabled={isMalzemeGider || isDemirbasGider}
             />
           </div>
 
