@@ -193,6 +193,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   function setMA(field: keyof MalzemeAlt, value: string) {
     setMalzemeAlt(prev => ({ ...prev, [field]: value }))
+    if (field === "ad") {
+      setForm(prev => ({ ...prev, aciklama: value ? `${value} alım` : "" }))
+    }
   }
 
   function setDA(field: keyof DemirbasAlt, value: string) {
@@ -395,7 +398,12 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
           <div className="space-y-1.5">
             <Label>Açıklama</Label>
-            <Input value={form.aciklama} onChange={e => setF("aciklama", e.target.value)} placeholder="İşlem açıklaması" />
+            <Input
+              value={form.aciklama}
+              onChange={e => setF("aciklama", e.target.value)}
+              placeholder="İşlem açıklaması"
+              disabled={isMalzemeGider}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
