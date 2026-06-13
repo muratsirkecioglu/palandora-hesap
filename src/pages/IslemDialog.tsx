@@ -680,7 +680,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                           <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
                             <SelectContent>
-                              {malzemeler.filter(m => m.miktar > 0).map(m => {
+                              {malzemeler.filter(m => m.miktar > 0 || m.id === satir.malzeme_id).map(m => {
                                 const birimFiyat = m.kaynak_islem && m.miktar > 0
                                   ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
                                   : null
