@@ -83,7 +83,7 @@ const defaultForm = {
   adam_saat: "",
   nakliye_tutari: "",
   nakliye_faturali: false,
-  faturali: true,
+  faturali: false,
   hesap_id: "",
 }
 
