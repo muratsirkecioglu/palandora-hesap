@@ -30,15 +30,18 @@ const ODEME_DURUM_LABEL: Record<string, string> = {
   odendi: "Ödendi",
   kismi_odendi: "Kısmi",
   beklemede: "Beklemede",
+  fazla_odeme: "Fazla Ödeme",
 }
 const ODEME_DURUM_VARIANT: Record<string, "success" | "warning" | "destructive"> = {
   odendi: "success",
   kismi_odendi: "warning",
   beklemede: "destructive",
+  fazla_odeme: "warning",
 }
 
-function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" | "beklemede" {
-  if (odenen >= tutar) return "odendi"
+function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" | "beklemede" | "fazla_odeme" {
+  if (odenen > tutar + 0.005) return "fazla_odeme"
+  if (odenen >= tutar - 0.005) return "odendi"
   if (odenen > 0) return "kismi_odendi"
   return "beklemede"
 }
@@ -197,9 +200,17 @@ export function Finans() {
             {formatDate(islem.tarih)} · {islem.kategori}
             {islem.vade_tarihi && ` · Vade: ${formatDate(islem.vade_tarihi)}`}
           </p>
-          {durum !== "odendi" && (
+          {durum === "kismi_odendi" && (
             <p className="text-xs text-orange-500 mt-0.5">
               Ödenen: {formatCurrency(islem.odenen_tutar)} · Kalan: {formatCurrency(kalan)}
+            </p>
+          )}
+          {durum === "beklemede" && (
+            <p className="text-xs text-orange-500 mt-0.5">Henüz ödenmedi</p>
+          )}
+          {durum === "fazla_odeme" && (
+            <p className="text-xs text-red-500 mt-0.5 font-medium">
+              Fazla Ödeme: {formatCurrency(-kalan)}
             </p>
           )}
           {netKar !== null && (

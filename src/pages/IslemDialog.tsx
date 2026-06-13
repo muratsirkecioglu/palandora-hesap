@@ -605,7 +605,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                     <div className="flex justify-between text-xs px-1 pt-1">
                       <span className="text-muted-foreground">Ödenen: {formatCurrency(odenen)}</span>
                       {kalan > 0.005 && <span className="text-orange-500">Kalan: {formatCurrency(kalan)}</span>}
-                      {kalan <= 0.005 && <span className="text-green-600 font-medium">Tam ödendi</span>}
+                      {kalan >= -0.005 && kalan <= 0.005 && <span className="text-green-600 font-medium">Ödendi</span>}
+                      {kalan < -0.005 && <span className="text-red-500 font-medium">Fazla Ödeme: {formatCurrency(-kalan)}</span>}
                     </div>
                   )
                 })()}
