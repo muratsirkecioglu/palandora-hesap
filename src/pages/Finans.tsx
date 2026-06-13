@@ -37,6 +37,12 @@ const ODEME_DURUM_VARIANT: Record<string, "success" | "warning" | "destructive">
   beklemede: "destructive",
 }
 
+function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" | "beklemede" {
+  if (odenen >= tutar) return "odendi"
+  if (odenen > 0) return "kismi_odendi"
+  return "beklemede"
+}
+
 export function Finans() {
   const { isAdmin, user } = useAuth()
   const [islemler, setIslemler] = useState<Islem[]>([])
@@ -140,25 +146,26 @@ export function Finans() {
   const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
 
   const gelirler = donemFiltrele(gelirlerTumu).filter(i =>
-    (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(i.tutar, i.odenen_tutar) === filterOdeme) &&
     (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
   )
   const giderler = donemFiltrele(giderlerTumu).filter(i =>
-    (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(i.tutar, i.odenen_tutar) === filterOdeme) &&
     (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
   )
 
   const toplamGelir = islemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
   const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
   const tahsilEdilecek = islemler
-    .filter(i => i.tur === "gelir" && i.odeme_durumu !== "odendi")
+    .filter(i => i.tur === "gelir" && i.odenen_tutar < i.tutar)
     .reduce((s, i) => s + (i.tutar - i.odenen_tutar), 0)
   const odenecek = islemler
-    .filter(i => i.tur === "gider" && i.odeme_durumu !== "odendi")
+    .filter(i => i.tur === "gider" && i.odenen_tutar < i.tutar)
     .reduce((s, i) => s + (i.tutar - i.odenen_tutar), 0)
 
   function IslemSatir({ islem }: { islem: Islem }) {
     const kalan = islem.tutar - islem.odenen_tutar
+    const durum = odemeDurumu(islem.tutar, islem.odenen_tutar)
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
@@ -172,8 +179,8 @@ export function Finans() {
               ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" aria-label="Faturalı" />
               : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" aria-label="Faturasız" />
             }
-            <Badge variant={ODEME_DURUM_VARIANT[islem.odeme_durumu]} className="text-xs">
-              {ODEME_DURUM_LABEL[islem.odeme_durumu]}
+            <Badge variant={ODEME_DURUM_VARIANT[durum]} className="text-xs">
+              {ODEME_DURUM_LABEL[durum]}
             </Badge>
             {hasStok && (
               <Badge variant="outline" className="text-xs gap-1">
@@ -190,7 +197,7 @@ export function Finans() {
             {formatDate(islem.tarih)} · {islem.kategori}
             {islem.vade_tarihi && ` · Vade: ${formatDate(islem.vade_tarihi)}`}
           </p>
-          {islem.odeme_durumu !== "odendi" && (
+          {durum !== "odendi" && (
             <p className="text-xs text-orange-500 mt-0.5">
               Ödenen: {formatCurrency(islem.odenen_tutar)} · Kalan: {formatCurrency(kalan)}
             </p>

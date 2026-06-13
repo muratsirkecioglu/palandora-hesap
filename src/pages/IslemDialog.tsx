@@ -326,8 +326,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     const toplam = parseFloat(form.tutar)
     const gecerliOdemeler = odemeSatirlar.filter(o => parseFloat(o.tutar) > 0)
     const toplamOdenen = gecerliOdemeler.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
-    const odmDurum: "odendi" | "kismi_odendi" | "beklemede" =
-      toplamOdenen >= toplam ? "odendi" : toplamOdenen > 0 ? "kismi_odendi" : "beklemede"
 
     const islemPayload = {
       tarih: form.tarih,
@@ -335,7 +333,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       tutar: toplam,
       tur: form.tur,
       kategori: form.kategori,
-      odeme_durumu: odmDurum,
       odenen_tutar: toplamOdenen,
       vade_tarihi: form.vade_tarihi || null,
       notlar: form.notlar || null,
