@@ -60,6 +60,7 @@ interface Props {
   open: boolean
   onClose: () => void
   editing: Islem | null
+  initialValues?: Islem
   malzemeler: Malzeme[]
   hesaplar: Hesap[]
   onSaved: () => void
@@ -81,7 +82,7 @@ const defaultForm = {
   hesap_id: "",
 }
 
-export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSaved }: Props) {
+export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, onSaved }: Props) {
   const { user } = useAuth()
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
@@ -161,12 +162,30 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
           }
         })
       }
+    } else if (initialValues) {
+      setForm({
+        tarih: new Date().toISOString().slice(0, 10),
+        aciklama: initialValues.aciklama,
+        tutar: String(initialValues.tutar),
+        tur: initialValues.tur,
+        kategori: initialValues.kategori,
+        odeme_durumu: "odendi",
+        ilk_odeme: "",
+        vade_tarihi: "",
+        notlar: initialValues.notlar ?? "",
+        adam_saat: initialValues.adam_saat != null ? String(initialValues.adam_saat) : "",
+        nakliye_tutari: initialValues.nakliye_tutari != null ? String(initialValues.nakliye_tutari) : "",
+        faturali: initialValues.faturali ?? true,
+        hesap_id: initialValues.hesap_id ?? "",
+      })
+      setStokEkle(false)
+      setStokSatirlar([])
     } else {
       setForm(defaultForm)
       setStokEkle(false)
       setStokSatirlar([])
     }
-  }, [open, editing])
+  }, [open, editing, initialValues])
 
   function setF(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -332,7 +351,7 @@ export function IslemDialog({ open, onClose, editing, malzemeler, hesaplar, onSa
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? "İşlemi Düzenle" : "Yeni İşlem"}</DialogTitle>
+          <DialogTitle>{editing ? "İşlemi Düzenle" : initialValues ? "İşlemi Kopyala" : "Yeni İşlem"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
 

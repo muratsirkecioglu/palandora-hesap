@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight, FileCheck, FileX } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight, FileCheck, FileX, Copy } from "lucide-react"
 import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -48,10 +48,12 @@ export function Finans() {
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
   const [filterGiderKat, setFilterGiderKat] = useState("tumu")
+  const [filterDonem, setFilterDonem] = useState<"tum" | "bu_ay" | "gecen_ay" | "son_3_ay" | "bu_yil">("tum")
   const [ozetFiltre, setOzetFiltre] = useState<"son6ay" | "tumzamanlar">("son6ay")
   const [islemDialogOpen, setIslemDialogOpen] = useState(false)
   const [odemeDialogOpen, setOdemeDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Islem | null>(null)
+  const [copying, setCopying] = useState<Islem | null>(null)
   const [odemeIslem, setOdemeIslem] = useState<Islem | null>(null)
 
   async function load() {
@@ -75,14 +77,38 @@ export function Finans() {
 
   useEffect(() => { load() }, [])
 
-  function openNew() { setEditing(null); setIslemDialogOpen(true) }
-  function openEdit(i: Islem) { setEditing(i); setIslemDialogOpen(true) }
+  function openNew() { setEditing(null); setCopying(null); setIslemDialogOpen(true) }
+  function openEdit(i: Islem) { setEditing(i); setCopying(null); setIslemDialogOpen(true) }
+  function openCopy(i: Islem) { setEditing(null); setCopying(i); setIslemDialogOpen(true) }
   function openOdeme(i: Islem) { setOdemeIslem(i); setOdemeDialogOpen(true) }
 
   async function handleDelete(id: string) {
     if (!confirm("Bu işlemi silmek istediğinize emin misiniz?")) return
     await supabase.from("islemler").delete().eq("id", id)
     load()
+  }
+
+  function donemFiltrele(list: Islem[]): Islem[] {
+    if (filterDonem === "tum") return list
+    const now = new Date()
+    let start: Date, end: Date
+    if (filterDonem === "bu_ay") {
+      start = new Date(now.getFullYear(), now.getMonth(), 1)
+      end = now
+    } else if (filterDonem === "gecen_ay") {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      end = new Date(now.getFullYear(), now.getMonth(), 0)
+    } else if (filterDonem === "son_3_ay") {
+      start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      end = now
+    } else {
+      start = new Date(now.getFullYear(), 0, 1)
+      end = now
+    }
+    return list.filter(i => {
+      const d = new Date(i.tarih + "T12:00:00")
+      return d >= start && d <= end
+    })
   }
 
   const ayOzetleri = (() => {
@@ -112,11 +138,11 @@ export function Finans() {
   const gelirKategoriler = [...new Set(gelirlerTumu.map(i => i.kategori))].sort()
   const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
 
-  const gelirler = gelirlerTumu.filter(i =>
+  const gelirler = donemFiltrele(gelirlerTumu).filter(i =>
     (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
     (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
   )
-  const giderler = giderlerTumu.filter(i =>
+  const giderler = donemFiltrele(giderlerTumu).filter(i =>
     (filterOdeme === "tumu" || i.odeme_durumu === filterOdeme) &&
     (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
   )
@@ -187,6 +213,9 @@ export function Finans() {
                   <CreditCard className="h-3.5 w-3.5" />
                 </Button>
               )}
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Kopyala" onClick={() => openCopy(islem)}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(islem)}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
@@ -291,8 +320,18 @@ export function Finans() {
         </Card>
       )}
 
-      {/* Filtre */}
-      <div className="flex justify-end">
+      {/* Filtreler */}
+      <div className="flex justify-end gap-2 flex-wrap">
+        <Select value={filterDonem} onValueChange={v => setFilterDonem(v as typeof filterDonem)}>
+          <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="tum">Tüm Zamanlar</SelectItem>
+            <SelectItem value="bu_ay">Bu Ay</SelectItem>
+            <SelectItem value="gecen_ay">Geçen Ay</SelectItem>
+            <SelectItem value="son_3_ay">Son 3 Ay</SelectItem>
+            <SelectItem value="bu_yil">Bu Yıl</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={filterOdeme} onValueChange={v => setFilterOdeme(v as typeof filterOdeme)}>
           <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -392,8 +431,9 @@ export function Finans() {
 
       <IslemDialog
         open={islemDialogOpen}
-        onClose={() => setIslemDialogOpen(false)}
+        onClose={() => { setIslemDialogOpen(false); setCopying(null) }}
         editing={editing}
+        initialValues={copying ?? undefined}
         malzemeler={malzemeler}
         hesaplar={hesaplar}
         onSaved={load}
