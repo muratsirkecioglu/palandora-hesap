@@ -123,6 +123,7 @@ export function Stok() {
 
   async function handleDelete(id: string) {
     if (!confirm("Bu malzemeyi silmek istediğinize emin misiniz?\nBağlı stok hareketleri de silinecektir.")) return
+    await supabase.from("islem_stok").delete().eq("malzeme_id", id)
     await supabase.from("malzemeler").delete().eq("id", id)
     load()
   }
