@@ -56,7 +56,7 @@ export function Stok() {
       supabase.from("malzemeler").select("*").order("ad"),
       supabase.from("islem_stok")
         .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali)")
-        .order("tarih", { ascending: false }),
+        .order("created_at", { ascending: false }),
     ])
 
     const rows = (stokData ?? []) as unknown as StokRow[]
