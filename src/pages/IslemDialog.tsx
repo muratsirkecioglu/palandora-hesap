@@ -204,8 +204,25 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         faturali: initialValues.faturali ?? true,
         hesap_id: initialValues.hesap_id ?? "",
       })
-      setStokEkle(false)
-      setStokSatirlar([])
+      // linkedId'ler boş kalır — kopyada yeni sub-record oluşturulacak
+      if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
+        supabase.from("malzemeler").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
+          .then(({ data }) => {
+            if (data) setMalzemeAlt({ ad: data.ad, mal_kategori: data.kategori, birim: data.birim, miktar: String(data.miktar), min_miktar: String(data.min_miktar) })
+          })
+      } else if (initialValues.tur === "gider" && initialValues.kategori === "Demirbaş") {
+        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
+          .then(({ data }) => {
+            if (data) setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "", zimmet_kullanici_id: data.zimmet_kullanici_id ?? "", zimmet_tarihi: data.zimmet_tarihi ?? "" })
+          })
+      } else if (initialValues.tur === "gelir") {
+        supabase.from("islem_stok").select("*").eq("islem_id", initialValues.id).then(({ data }) => {
+          if (data && data.length > 0) {
+            setStokEkle(true)
+            setStokSatirlar(data.map(s => ({ malzeme_id: s.malzeme_id, miktar: String(s.miktar), birim_fiyat: String(s.birim_fiyat) })))
+          }
+        })
+      }
     } else {
       setForm(defaultForm)
       setStokEkle(false)
