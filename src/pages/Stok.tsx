@@ -135,9 +135,9 @@ export function Stok() {
       return matchSearch && matchKat
     })
     .sort((a, b) => {
-      const kritikA = a.stok <= a.min_miktar
-      const kritikB = b.stok <= b.min_miktar
-      if (kritikA !== kritikB) return kritikA ? -1 : 1
+      const bitmiA = a.stok <= 0
+      const bitmiB = b.stok <= 0
+      if (bitmiA !== bitmiB) return bitmiA ? 1 : -1
       return a.ad.localeCompare(b.ad, "tr")
     })
 
