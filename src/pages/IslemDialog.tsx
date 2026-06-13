@@ -82,6 +82,7 @@ const defaultForm = {
   notlar: "",
   adam_saat: "",
   nakliye_tutari: "",
+  nakliye_faturali: false,
   faturali: true,
   hesap_id: "",
 }
@@ -153,6 +154,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         notlar: editing.notlar ?? "",
         adam_saat: editing.adam_saat != null ? String(editing.adam_saat) : "",
         nakliye_tutari: editing.nakliye_tutari != null ? String(editing.nakliye_tutari) : "",
+        nakliye_faturali: editing.nakliye_faturali ?? false,
         faturali: editing.faturali ?? true,
         hesap_id: editing.hesap_id ?? "",
       })
@@ -201,6 +203,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         notlar: initialValues.notlar ?? "",
         adam_saat: initialValues.adam_saat != null ? String(initialValues.adam_saat) : "",
         nakliye_tutari: initialValues.nakliye_tutari != null ? String(initialValues.nakliye_tutari) : "",
+        nakliye_faturali: initialValues.nakliye_faturali ?? false,
         faturali: initialValues.faturali ?? true,
         hesap_id: initialValues.hesap_id ?? "",
       })
@@ -299,6 +302,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       notlar: form.notlar || null,
       adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
       nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
+      nakliye_faturali: form.nakliye_faturali,
       faturali: form.faturali,
       hesap_id: form.hesap_id || null,
       kullanici_id: user!.id,
@@ -471,14 +475,28 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
           {/* Nakliye — yalnızca Malzeme gider */}
           {isMalzemeGider && (
-            <div className="space-y-1.5">
-              <Label>Nakliye Tutarı (₺) — isteğe bağlı</Label>
-              <Input
-                type="number" min="0" step="0.01"
-                value={form.nakliye_tutari}
-                onChange={e => setF("nakliye_tutari", e.target.value)}
-                placeholder="0.00"
-              />
+            <div className="space-y-2">
+              <div className="space-y-1.5">
+                <Label>Nakliye Tutarı (₺) — isteğe bağlı</Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={form.nakliye_tutari}
+                  onChange={e => setF("nakliye_tutari", e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              {form.nakliye_tutari && parseFloat(form.nakliye_tutari) > 0 && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="nakliye_faturali"
+                    checked={form.nakliye_faturali}
+                    onChange={e => setForm(p => ({ ...p, nakliye_faturali: e.target.checked }))}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="nakliye_faturali" className="text-sm font-medium cursor-pointer">Nakliye Faturalı</label>
+                </div>
+              )}
             </div>
           )}
 

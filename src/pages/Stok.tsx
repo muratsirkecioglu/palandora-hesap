@@ -17,6 +17,7 @@ const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 interface KaynakIslem {
   tutar: number
   nakliye_tutari: number | null
+  nakliye_faturali: boolean
   tarih: string
   faturali: boolean
 }
@@ -48,7 +49,7 @@ export function Stok() {
     setLoading(true)
     const { data } = await supabase
       .from("malzemeler")
-      .select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari, tarih, faturali)")
+      .select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali)")
       .order("created_at", { ascending: false })
     setMalzemeler((data ?? []) as MalzemeRow[])
     setLoading(false)
@@ -188,6 +189,11 @@ export function Stok() {
                         Min: {m.min_miktar} {m.birim}
                         {m.kaynak_islem?.tarih && ` · ${formatDate(m.kaynak_islem.tarih)}`}
                         {m.kaynak_islem?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.kaynak_islem.nakliye_tutari)}`}
+                        {m.kaynak_islem?.nakliye_tutari != null && (
+                          m.kaynak_islem.nakliye_faturali
+                            ? <FileCheck className="inline h-3 w-3 ml-1 text-green-600" aria-label="Nakliye Faturalı" />
+                            : <FileX className="inline h-3 w-3 ml-1 text-orange-400" aria-label="Nakliye Faturasız" />
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
