@@ -137,7 +137,8 @@ export function Finans() {
     if (!confirm("Bu işlemi silmek istediğinize emin misiniz?")) return
     await supabase.from("odemeler").delete().eq("islem_id", id)
     await supabase.from("islem_stok").delete().eq("islem_id", id)
-    await supabase.from("islemler").delete().eq("id", id)
+    const { error } = await supabase.from("islemler").delete().eq("id", id)
+    if (error) { alert("Silme hatası: " + error.message); return }
     load()
   }
 
