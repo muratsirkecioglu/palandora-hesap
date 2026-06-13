@@ -677,7 +677,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                   {stokSatirlar.map((satir, i) => {
                     const secili = malzemeler.find(m => m.id === satir.malzeme_id)
                     return (
-                      <div key={i} className="grid grid-cols-[1fr_80px_32px] gap-2 items-end">
+                      <div key={i} className="grid grid-cols-[1fr_auto_32px] gap-2 items-end">
                         <div className="space-y-1">
                           {i === 0 && <Label className="text-xs">Malzeme</Label>}
                           <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
@@ -698,8 +698,11 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                           </Select>
                         </div>
                         <div className="space-y-1">
-                          {i === 0 && <Label className="text-xs">Miktar{secili ? ` (${secili.birim})` : ""}</Label>}
-                          <Input className="h-8 text-xs" type="number" min="0" step="0.001" value={satir.miktar} onChange={e => updateStokSatir(i, "miktar", e.target.value)} placeholder="0" />
+                          {i === 0 && <Label className="text-xs">Miktar</Label>}
+                          <div className="flex items-center gap-1">
+                            <Input className="h-8 text-xs w-20" type="number" min="0" step="0.001" value={satir.miktar} onChange={e => updateStokSatir(i, "miktar", e.target.value)} placeholder="0" />
+                            {secili && <span className="text-xs text-muted-foreground whitespace-nowrap">{secili.birim}</span>}
+                          </div>
                         </div>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeStokSatir(i)}>
                           <Trash2 className="h-3.5 w-3.5" />
