@@ -262,8 +262,11 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   function onMalzemeSelect(i: number, malzemeId: string) {
     const m = malzemeler.find(m => m.id === malzemeId)
+    const birimMaliyet = m?.kaynak_islem && m.miktar > 0
+      ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
+      : 0
     setStokSatirlar(prev => prev.map((s, idx) =>
-      idx === i ? { ...s, malzeme_id: malzemeId, birim_fiyat: m ? "0" : "" } : s
+      idx === i ? { ...s, malzeme_id: malzemeId, birim_fiyat: String(birimMaliyet) } : s
     ))
   }
 

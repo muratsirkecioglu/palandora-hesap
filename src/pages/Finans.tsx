@@ -44,6 +44,7 @@ export function Finans() {
   const [malzemeler, setMalzemeler] = useState<MalzemeWithFiyat[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
+  const [stokMaliyetMap, setStokMaliyetMap] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
@@ -64,14 +65,29 @@ export function Finans() {
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }] = await Promise.all([
       islemQ,
       supabase.from("malzemeler").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari)").order("ad"),
-      supabase.from("islem_stok").select("islem_id"),
+      supabase.from("islem_stok").select("islem_id, miktar, tur, birim_fiyat, malzeme:malzemeler!malzeme_id(miktar, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari))"),
       supabase.from("hesaplar").select("*").order("ad"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
     setMalzemeler((malzemeData ?? []) as MalzemeWithFiyat[])
     setHesaplar((hesapData ?? []) as Hesap[])
-    setStokIslemIds(new Set((stokData ?? []).map((s: { islem_id: string }) => s.islem_id)))
+
+    const ids = new Set<string>()
+    const mMap = new Map<string, number>()
+    for (const s of (stokData ?? []) as any[]) {
+      ids.add(s.islem_id)
+      if (s.tur !== "cikis") continue
+      const ki = s.malzeme?.kaynak_islem
+      const birimFiyat = s.birim_fiyat > 0
+        ? s.birim_fiyat
+        : (ki && s.malzeme.miktar > 0
+            ? (ki.tutar - (ki.nakliye_tutari ?? 0)) / s.malzeme.miktar
+            : 0)
+      mMap.set(s.islem_id, (mMap.get(s.islem_id) ?? 0) + s.miktar * birimFiyat)
+    }
+    setStokIslemIds(ids)
+    setStokMaliyetMap(mMap)
     setLoading(false)
   }
 
@@ -150,6 +166,8 @@ export function Finans() {
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const hesapAd = islem.hesap_id ? hesaplar.find(h => h.id === islem.hesap_id)?.ad : null
+    const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
+    const netKar = malzemeMaliyeti > 0 ? islem.tutar - malzemeMaliyeti : null
     return (
       <div className="py-3 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -181,6 +199,14 @@ export function Finans() {
           {islem.odeme_durumu !== "odendi" && (
             <p className="text-xs text-orange-500 mt-0.5">
               Ödenen: {formatCurrency(islem.odenen_tutar)} · Kalan: {formatCurrency(kalan)}
+            </p>
+          )}
+          {netKar !== null && (
+            <p className="text-xs mt-0.5">
+              <span className="text-muted-foreground">Maliyet: {formatCurrency(malzemeMaliyeti)}</span>
+              <span className={`ml-2 font-medium ${netKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+                Net Kâr: {netKar >= 0 ? "+" : ""}{formatCurrency(netKar)}
+              </span>
             </p>
           )}
           {islem.adam_saat != null && (
