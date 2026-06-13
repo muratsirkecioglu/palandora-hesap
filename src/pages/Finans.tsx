@@ -181,28 +181,31 @@ export function Finans() {
   const gelirKategoriler = [...new Set(gelirlerTumu.map(i => i.kategori))].sort()
   const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
 
+  function islemToplam(i: Islem) { return i.tutar + (i.nakliye_tutari ?? 0) }
+
   const gelirler = donemFiltrele(gelirlerTumu).filter(i =>
-    (filterOdeme === "tumu" || odemeDurumu(i.tutar, odenenMap.get(i.id) ?? 0) === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(islemToplam(i), odenenMap.get(i.id) ?? 0) === filterOdeme) &&
     (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
   )
   const giderler = donemFiltrele(giderlerTumu).filter(i =>
-    (filterOdeme === "tumu" || odemeDurumu(i.tutar, odenenMap.get(i.id) ?? 0) === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(islemToplam(i), odenenMap.get(i.id) ?? 0) === filterOdeme) &&
     (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
   )
 
   const toplamGelir = islemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
-  const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
+  const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + islemToplam(i), 0)
   const tahsilEdilecek = islemler
-    .filter(i => i.tur === "gelir" && (odenenMap.get(i.id) ?? 0) < i.tutar)
-    .reduce((s, i) => s + (i.tutar - (odenenMap.get(i.id) ?? 0)), 0)
+    .filter(i => i.tur === "gelir" && (odenenMap.get(i.id) ?? 0) < islemToplam(i))
+    .reduce((s, i) => s + (islemToplam(i) - (odenenMap.get(i.id) ?? 0)), 0)
   const odenecek = islemler
-    .filter(i => i.tur === "gider" && (odenenMap.get(i.id) ?? 0) < i.tutar)
-    .reduce((s, i) => s + (i.tutar - (odenenMap.get(i.id) ?? 0)), 0)
+    .filter(i => i.tur === "gider" && (odenenMap.get(i.id) ?? 0) < islemToplam(i))
+    .reduce((s, i) => s + (islemToplam(i) - (odenenMap.get(i.id) ?? 0)), 0)
 
   function IslemSatir({ islem }: { islem: Islem }) {
+    const toplam = islemToplam(islem)
     const odenen = odenenMap.get(islem.id) ?? 0
-    const kalan = islem.tutar - odenen
-    const durum = odemeDurumu(islem.tutar, odenen)
+    const kalan = toplam - odenen
+    const durum = odemeDurumu(toplam, odenen)
     const hasStok = stokIslemIds.has(islem.id)
     const eksikHesap = eksikHesapSet.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
@@ -270,7 +273,7 @@ export function Finans() {
         <div className="flex items-center gap-1 shrink-0">
           <div className="text-right mr-1">
             <p className={`font-semibold text-sm ${islem.tur === "gelir" ? "text-green-600" : "text-red-500"}`}>
-              {islem.tur === "gelir" ? "+" : "-"}{formatCurrency(islem.tutar)}
+              {islem.tur === "gelir" ? "+" : "-"}{formatCurrency(toplam)}
             </p>
           </div>
           {canEdit && (

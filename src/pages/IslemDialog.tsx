@@ -297,7 +297,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   function addOdeme() {
     setOdemeSatirlar(prev => {
-      const toplam = parseFloat(form.tutar) || 0
+      const toplam = (parseFloat(form.tutar) || 0) + (parseFloat(form.nakliye_tutari) || 0)
       const odenen = prev.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
       const kalan = Math.max(0, toplam - odenen)
       return [...prev, {
@@ -610,7 +610,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                   </div>
                 ))}
                 {(() => {
-                  const toplam = parseFloat(form.tutar) || 0
+                  const toplam = (parseFloat(form.tutar) || 0) + (parseFloat(form.nakliye_tutari) || 0)
                   const odenen = odemeSatirlar.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
                   const kalan = toplam - odenen
                   if (toplam <= 0) return null
