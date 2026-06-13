@@ -119,6 +119,20 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   }, [])
 
   useEffect(() => {
+    if (!isDemirbasGider || !form.tarih) return
+    const garantiOtomatik = (() => {
+      const d = new Date(form.tarih)
+      d.setFullYear(d.getFullYear() + 2)
+      return d.toISOString().slice(0, 10)
+    })()
+    setDemirbasAlt(prev => ({
+      ...prev,
+      zimmet_tarihi: prev.zimmet_tarihi || form.tarih,
+      garanti_bitis: prev.garanti_bitis || garantiOtomatik,
+    }))
+  }, [form.tarih, isDemirbasGider])
+
+  useEffect(() => {
     if (!open) return
     setError(null)
     setLinkedMalzemeId(null)
