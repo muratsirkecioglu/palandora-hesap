@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User, ArrowLeftRight } from "lucide-react"
-import { supabase, type Hesap, type Islem } from "@/lib/supabase"
+import { supabase, type Hesap } from "@/lib/supabase"
 import { TransferDialog } from "./TransferDialog"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -55,17 +55,20 @@ export function Hesaplar() {
 
   async function load() {
     setLoading(true)
-    const [{ data: hesapData }, { data: islemData }] = await Promise.all([
+    const [{ data: hesapData }, { data: odemeData }] = await Promise.all([
       supabase.from("hesaplar").select("*").order("ad"),
-      supabase.from("islemler").select("hesap_id, tur, tutar").not("hesap_id", "is", null),
+      supabase.from("odemeler")
+        .select("hesap_id, tutar, islem:islemler!islem_id(tur)")
+        .not("hesap_id", "is", null),
     ])
 
-    const islemler = (islemData ?? []) as Pick<Islem, "hesap_id" | "tur" | "tutar">[]
+    type OdemeRow = { hesap_id: string; tutar: number; islem: { tur: string } | null }
+    const odemeler = (odemeData ?? []) as unknown as OdemeRow[]
 
     const rows: HesapRow[] = (hesapData ?? []).map((h: Hesap) => {
-      const linked = islemler.filter(i => i.hesap_id === h.id)
-      const gelir = linked.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
-      const gider = linked.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
+      const linked = odemeler.filter(o => o.hesap_id === h.id && o.islem)
+      const gelir = linked.filter(o => o.islem!.tur === "gelir").reduce((s, o) => s + o.tutar, 0)
+      const gider = linked.filter(o => o.islem!.tur === "gider").reduce((s, o) => s + o.tutar, 0)
       return { ...h, gelir, gider, bakiye: h.bakiye_baslangic + gelir - gider }
     })
 

@@ -20,6 +20,14 @@ interface StokSatir {
   birim_fiyat: string
 }
 
+interface OdemeSatir {
+  id?: string
+  tarih: string
+  tutar: string
+  hesap_id: string
+  aciklama: string
+}
+
 interface MalzemeAlt {
   ad: string
   mal_kategori: string
@@ -76,15 +84,12 @@ const defaultForm = {
   tutar: "",
   tur: "gelir" as "gelir" | "gider",
   kategori: "Diğer",
-  odeme_durumu: "odendi" as "odendi" | "kismi_odendi" | "beklemede",
-  ilk_odeme: "",
   vade_tarihi: "",
   notlar: "",
   adam_saat: "",
   nakliye_tutari: "",
   nakliye_faturali: false,
   faturali: false,
-  hesap_id: "",
 }
 
 export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, onSaved }: Props) {
@@ -92,6 +97,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
   const [stokEkle, setStokEkle] = useState(false)
+  const [odemeSatirlar, setOdemeSatirlar] = useState<OdemeSatir[]>([])
   const [malzemeAlt, setMalzemeAlt] = useState<MalzemeAlt>(defaultMalzemeAlt)
   const [linkedMalzemeId, setLinkedMalzemeId] = useState<string | null>(null)
   const [demirbasAlt, setDemirbasAlt] = useState<DemirbasAlt>(defaultDemirbasAlt)
@@ -103,7 +109,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const isMalzemeGider = form.tur === "gider" && form.kategori === "Malzeme"
   const isDemirbasGider = form.tur === "gider" && form.kategori === "Demirbaş"
 
-  // Hesaplanan birim fiyat = (tutar - nakliye) / miktar
   const hesapBirimFiyat = useMemo(() => {
     const tutar = parseFloat(form.tutar) || 0
     const miktar = parseFloat(malzemeAlt.miktar) || 0
@@ -140,6 +145,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setMalzemeAlt(defaultMalzemeAlt)
     setLinkedDemirbasId(null)
     setDemirbasAlt(defaultDemirbasAlt)
+    setOdemeSatirlar([])
 
     if (editing) {
       setForm({
@@ -148,16 +154,27 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         tutar: String(editing.tutar),
         tur: editing.tur,
         kategori: editing.kategori,
-        odeme_durumu: editing.odeme_durumu,
-        ilk_odeme: "",
         vade_tarihi: editing.vade_tarihi ?? "",
         notlar: editing.notlar ?? "",
         adam_saat: editing.adam_saat != null ? String(editing.adam_saat) : "",
         nakliye_tutari: editing.nakliye_tutari != null ? String(editing.nakliye_tutari) : "",
         nakliye_faturali: editing.nakliye_faturali ?? false,
-        faturali: editing.faturali ?? true,
-        hesap_id: editing.hesap_id ?? "",
+        faturali: editing.faturali ?? false,
       })
+
+      // Mevcut ödemeleri yükle
+      supabase.from("odemeler").select("*").eq("islem_id", editing.id).order("tarih")
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            setOdemeSatirlar(data.map(o => ({
+              id: o.id,
+              tarih: o.tarih,
+              tutar: String(o.tutar),
+              hesap_id: o.hesap_id ?? "",
+              aciklama: o.aciklama ?? "",
+            })))
+          }
+        })
 
       if (editing.tur === "gider" && editing.kategori === "Malzeme") {
         supabase.from("malzemeler").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
@@ -197,17 +214,14 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         tutar: String(initialValues.tutar),
         tur: initialValues.tur,
         kategori: initialValues.kategori,
-        odeme_durumu: "odendi",
-        ilk_odeme: "",
         vade_tarihi: "",
         notlar: initialValues.notlar ?? "",
         adam_saat: initialValues.adam_saat != null ? String(initialValues.adam_saat) : "",
         nakliye_tutari: initialValues.nakliye_tutari != null ? String(initialValues.nakliye_tutari) : "",
         nakliye_faturali: initialValues.nakliye_faturali ?? false,
-        faturali: initialValues.faturali ?? true,
-        hesap_id: initialValues.hesap_id ?? "",
+        faturali: initialValues.faturali ?? false,
       })
-      // linkedId'ler boş kalır — kopyada yeni sub-record oluşturulacak
+      // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
         supabase.from("malzemeler").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
           .then(({ data }) => {
@@ -273,6 +287,23 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     ))
   }
 
+  function addOdeme() {
+    setOdemeSatirlar(prev => [...prev, {
+      tarih: form.tarih,
+      tutar: "",
+      hesap_id: "",
+      aciklama: "",
+    }])
+  }
+
+  function removeOdeme(i: number) {
+    setOdemeSatirlar(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  function updateOdeme(i: number, field: keyof OdemeSatir, value: string) {
+    setOdemeSatirlar(prev => prev.map((o, idx) => idx === i ? { ...o, [field]: value } : o))
+  }
+
   async function handleSave() {
     if (!form.aciklama || !form.tutar || !form.tarih) return
     if (isMalzemeGider && (!malzemeAlt.ad || !malzemeAlt.miktar)) {
@@ -288,23 +319,25 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setError(null)
 
     const toplam = parseFloat(form.tutar)
+    const gecerliOdemeler = odemeSatirlar.filter(o => parseFloat(o.tutar) > 0)
+    const toplamOdenen = gecerliOdemeler.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
+    const odmDurum: "odendi" | "kismi_odendi" | "beklemede" =
+      toplamOdenen >= toplam ? "odendi" : toplamOdenen > 0 ? "kismi_odendi" : "beklemede"
+
     const islemPayload = {
       tarih: form.tarih,
       aciklama: form.aciklama,
       tutar: toplam,
       tur: form.tur,
       kategori: form.kategori,
-      odeme_durumu: form.odeme_durumu,
-      odenen_tutar: form.odeme_durumu === "odendi" ? toplam
-        : form.odeme_durumu === "kismi_odendi" ? parseFloat(form.ilk_odeme || "0")
-        : 0,
+      odeme_durumu: odmDurum,
+      odenen_tutar: toplamOdenen,
       vade_tarihi: form.vade_tarihi || null,
       notlar: form.notlar || null,
       adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
       nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
       nakliye_faturali: form.nakliye_faturali,
       faturali: form.faturali,
-      hesap_id: form.hesap_id || null,
       kullanici_id: user!.id,
     }
 
@@ -314,6 +347,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       const { error } = await supabase.from("islemler").update(islemPayload).eq("id", editing.id)
       if (error) { setError(error.message); setSaving(false); return }
       islemId = editing.id
+      // Mevcut ödemeleri sil, yenilerini ekle
+      await supabase.from("odemeler").delete().eq("islem_id", islemId)
       if (!isMalzemeGider) {
         await supabase.from("islem_stok").delete().eq("islem_id", islemId)
       }
@@ -321,18 +356,20 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
       if (error) { setError(error.message); setSaving(false); return }
       islemId = data.id
+    }
 
-      if (form.odeme_durumu === "odendi") {
-        await supabase.from("odemeler").insert({
-          islem_id: islemId, tarih: form.tarih, tutar: toplam,
-          aciklama: "Tam ödeme", kullanici_id: user!.id,
-        })
-      } else if (form.odeme_durumu === "kismi_odendi" && parseFloat(form.ilk_odeme || "0") > 0) {
-        await supabase.from("odemeler").insert({
-          islem_id: islemId, tarih: form.tarih, tutar: parseFloat(form.ilk_odeme),
-          aciklama: "İlk ödeme", kullanici_id: user!.id,
-        })
-      }
+    // Ödeme satırlarını kaydet
+    if (gecerliOdemeler.length > 0) {
+      await supabase.from("odemeler").insert(
+        gecerliOdemeler.map(o => ({
+          islem_id: islemId,
+          tarih: o.tarih,
+          tutar: parseFloat(o.tutar),
+          hesap_id: o.hesap_id || null,
+          aciklama: o.aciklama || null,
+          kullanici_id: user!.id,
+        }))
+      )
     }
 
     // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
@@ -437,21 +474,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             </div>
           </div>
 
-          {hesaplar.length > 0 && (
-            <div className="space-y-1.5">
-              <Label>Hesap (isteğe bağlı)</Label>
-              <Select value={form.hesap_id || "__none__"} onValueChange={v => setF("hesap_id", v === "__none__" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Hesap seçin..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Hesap seçilmedi —</SelectItem>
-                  {hesaplar.filter(h => h.aktif).map(h => (
-                    <SelectItem key={h.id} value={h.id}>{h.ad}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           <div className="space-y-1.5">
             <Label>Açıklama</Label>
             <Input
@@ -512,29 +534,87 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             <label htmlFor="faturali" className="text-sm font-medium cursor-pointer">Faturalı</label>
           </div>
 
-          {/* Ödeme durumu */}
-          <div className="space-y-3 border border-border rounded-lg p-3">
-            <p className="text-sm font-medium">Ödeme Durumu</p>
-            <Select value={form.odeme_durumu} onValueChange={v => setF("odeme_durumu", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="odendi">✅ Ödendi (tam)</SelectItem>
-                <SelectItem value="kismi_odendi">🔶 Kısmi Ödendi</SelectItem>
-                <SelectItem value="beklemede">⏳ Beklemede / Vadeli</SelectItem>
-              </SelectContent>
-            </Select>
-            {form.odeme_durumu === "kismi_odendi" && (
-              <div className="space-y-1.5">
-                <Label>Ödenen Miktar (₺)</Label>
-                <Input type="number" min="0" step="0.01" value={form.ilk_odeme} onChange={e => setF("ilk_odeme", e.target.value)} placeholder="0.00" />
+          {/* ── Ödemeler ───────────────────────────────────────────────── */}
+          <div className="space-y-2 border border-border rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Ödemeler</p>
+              <Button variant="outline" size="sm" onClick={addOdeme} className="gap-1 text-xs h-7">
+                <Plus className="h-3 w-3" /> Ödeme Ekle
+              </Button>
+            </div>
+            {odemeSatirlar.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-1">Henüz ödeme eklenmedi — beklemede olarak kaydedilecek</p>
+            ) : (
+              <div className="space-y-2">
+                {odemeSatirlar.map((odeme, i) => (
+                  <div key={i} className="border border-border/60 rounded-md p-2 space-y-2 bg-muted/20">
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        className="h-8 text-xs w-24"
+                        type="number" min="0" step="0.01"
+                        placeholder="Tutar"
+                        value={odeme.tutar}
+                        onChange={e => updateOdeme(i, "tutar", e.target.value)}
+                      />
+                      <Input
+                        className="h-8 text-xs flex-1"
+                        type="date"
+                        value={odeme.tarih}
+                        onChange={e => updateOdeme(i, "tarih", e.target.value)}
+                      />
+                      <Button
+                        variant="ghost" size="icon"
+                        className="h-8 w-8 text-destructive shrink-0"
+                        onClick={() => removeOdeme(i)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    {hesaplar.length > 0 && (
+                      <Select
+                        value={odeme.hesap_id || "__none__"}
+                        onValueChange={v => updateOdeme(i, "hesap_id", v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Hesap (isteğe bağlı)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Hesap seçilmedi —</SelectItem>
+                          {hesaplar.filter(h => h.aktif).map(h => (
+                            <SelectItem key={h.id} value={h.id}>{h.ad}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="Açıklama (isteğe bağlı)"
+                      value={odeme.aciklama}
+                      onChange={e => updateOdeme(i, "aciklama", e.target.value)}
+                    />
+                  </div>
+                ))}
+                {(() => {
+                  const toplam = parseFloat(form.tutar) || 0
+                  const odenen = odemeSatirlar.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
+                  const kalan = toplam - odenen
+                  if (toplam <= 0) return null
+                  return (
+                    <div className="flex justify-between text-xs px-1 pt-1">
+                      <span className="text-muted-foreground">Ödenen: {formatCurrency(odenen)}</span>
+                      {kalan > 0.005 && <span className="text-orange-500">Kalan: {formatCurrency(kalan)}</span>}
+                      {kalan <= 0.005 && <span className="text-green-600 font-medium">Tam ödendi</span>}
+                    </div>
+                  )
+                })()}
               </div>
             )}
-            {form.odeme_durumu !== "odendi" && (
-              <div className="space-y-1.5">
-                <Label>Vade Tarihi</Label>
-                <Input type="date" value={form.vade_tarihi} onChange={e => setF("vade_tarihi", e.target.value)} />
-              </div>
-            )}
+          </div>
+
+          {/* Vade tarihi — isteğe bağlı */}
+          <div className="space-y-1.5">
+            <Label>Vade Tarihi (isteğe bağlı)</Label>
+            <Input type="date" value={form.vade_tarihi} onChange={e => setF("vade_tarihi", e.target.value)} />
           </div>
 
           {/* ── Malzeme Gider: Stok alanları ────────────────────────────── */}

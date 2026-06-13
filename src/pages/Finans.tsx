@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight, FileCheck, FileX, Copy } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { IslemDialog } from "./IslemDialog"
-import { OdemeDialog } from "./OdemeDialog"
 
 function ayGrupla(list: Islem[]) {
   const map = new Map<string, Islem[]>()
@@ -52,10 +51,8 @@ export function Finans() {
   const [filterDonem, setFilterDonem] = useState("tum")
   const [ozetFiltre, setOzetFiltre] = useState<"son6ay" | "tumzamanlar">("son6ay")
   const [islemDialogOpen, setIslemDialogOpen] = useState(false)
-  const [odemeDialogOpen, setOdemeDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Islem | null>(null)
   const [copying, setCopying] = useState<Islem | null>(null)
-  const [odemeIslem, setOdemeIslem] = useState<Islem | null>(null)
 
   async function load() {
     setLoading(true)
@@ -96,7 +93,6 @@ export function Finans() {
   function openNew() { setEditing(null); setCopying(null); setIslemDialogOpen(true) }
   function openEdit(i: Islem) { setEditing(i); setCopying(null); setIslemDialogOpen(true) }
   function openCopy(i: Islem) { setEditing(null); setCopying(i); setIslemDialogOpen(true) }
-  function openOdeme(i: Islem) { setOdemeIslem(i); setOdemeDialogOpen(true) }
 
   async function handleDelete(id: string) {
     if (!confirm("Bu işlemi silmek istediğinize emin misiniz?")) return
@@ -165,7 +161,6 @@ export function Finans() {
     const kalan = islem.tutar - islem.odenen_tutar
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
-    const hesapAd = islem.hesap_id ? hesaplar.find(h => h.id === islem.hesap_id)?.ad : null
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
     const netKar = malzemeMaliyeti > 0 ? islem.tutar - malzemeMaliyeti : null
     return (
@@ -193,7 +188,6 @@ export function Finans() {
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {formatDate(islem.tarih)} · {islem.kategori}
-            {hesapAd && ` · ${hesapAd}`}
             {islem.vade_tarihi && ` · Vade: ${formatDate(islem.vade_tarihi)}`}
           </p>
           {islem.odeme_durumu !== "odendi" && (
@@ -223,11 +217,6 @@ export function Finans() {
           </div>
           {canEdit && (
             <>
-              {islem.odeme_durumu !== "odendi" && (
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:text-blue-600" title="Ödeme Ekle" onClick={() => openOdeme(islem)}>
-                  <CreditCard className="h-3.5 w-3.5" />
-                </Button>
-              )}
               <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Kopyala" onClick={() => openCopy(islem)}>
                 <Copy className="h-3.5 w-3.5" />
               </Button>
@@ -449,13 +438,6 @@ export function Finans() {
         editing={editing}
         initialValues={copying ?? undefined}
         malzemeler={malzemeler}
-        hesaplar={hesaplar}
-        onSaved={load}
-      />
-      <OdemeDialog
-        open={odemeDialogOpen}
-        onClose={() => setOdemeDialogOpen(false)}
-        islem={odemeIslem}
         hesaplar={hesaplar}
         onSaved={load}
       />
