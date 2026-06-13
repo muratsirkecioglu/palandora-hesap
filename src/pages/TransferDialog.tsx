@@ -63,7 +63,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
     const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
     const hedef = hesaplar.find(h => h.id === form.hedef_hesap_id)
 
-    const { error: err } = await supabase.from("islemler").insert([
+    const { data: inserted, error: err } = await supabase.from("islemler").insert([
       {
         tarih: form.tarih,
         aciklama: `${aciklama} → ${hedef?.ad}`,
@@ -71,7 +71,6 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
         tur: "gider",
         kategori: "Transfer",
         hesap_id: form.kaynak_hesap_id,
-        odenen_tutar: tutar,
         transfer_eslesme_id: eslesmeId,
         faturali: false,
         kullanici_id: user!.id,
@@ -83,15 +82,21 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
         tur: "gelir",
         kategori: "Transfer",
         hesap_id: form.hedef_hesap_id,
-        odenen_tutar: tutar,
         transfer_eslesme_id: eslesmeId,
         faturali: false,
         kullanici_id: user!.id,
       },
+    ]).select("id")
+
+    if (err || !inserted) { setSaving(false); setError(err?.message ?? "Hata"); return }
+
+    // Transfer ödemeleri oluştur (Hesaplar bakiyesi bu tabloya bakıyor)
+    await supabase.from("odemeler").insert([
+      { islem_id: inserted[0].id, tarih: form.tarih, tutar, hesap_id: form.kaynak_hesap_id, kullanici_id: user!.id },
+      { islem_id: inserted[1].id, tarih: form.tarih, tutar, hesap_id: form.hedef_hesap_id, kullanici_id: user!.id },
     ])
 
     setSaving(false)
-    if (err) { setError(err.message); return }
     handleClose()
     onSaved()
   }

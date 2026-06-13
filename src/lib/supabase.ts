@@ -45,7 +45,6 @@ export interface Islem {
   kategori: string
   kullanici_id: string
   hesap_id: string | null
-  odenen_tutar: number
   vade_tarihi: string | null
   notlar: string | null
   adam_saat: number | null

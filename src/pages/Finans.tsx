@@ -53,6 +53,7 @@ export function Finans() {
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [stokMaliyetMap, setStokMaliyetMap] = useState<Map<string, number>>(new Map())
+  const [odenenMap, setOdenenMap] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
@@ -68,11 +69,12 @@ export function Finans() {
     const islemQ = supabase.from("islemler").select("*").order("tarih", { ascending: false })
     if (!isAdmin) islemQ.eq("kullanici_id", user!.id)
 
-    const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }] = await Promise.all([
+    const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
       islemQ,
       supabase.from("malzemeler").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari)").order("ad"),
       supabase.from("islem_stok").select("islem_id, miktar, tur, birim_fiyat, malzeme:malzemeler!malzeme_id(miktar, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari))"),
       supabase.from("hesaplar").select("*").order("ad"),
+      supabase.from("odemeler").select("islem_id, tutar"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
@@ -94,6 +96,13 @@ export function Finans() {
     }
     setStokIslemIds(ids)
     setStokMaliyetMap(mMap)
+
+    const oMap = new Map<string, number>()
+    for (const o of (odemeData ?? []) as { islem_id: string; tutar: number }[]) {
+      oMap.set(o.islem_id, (oMap.get(o.islem_id) ?? 0) + o.tutar)
+    }
+    setOdenenMap(oMap)
+
     setLoading(false)
   }
 
@@ -149,26 +158,27 @@ export function Finans() {
   const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
 
   const gelirler = donemFiltrele(gelirlerTumu).filter(i =>
-    (filterOdeme === "tumu" || odemeDurumu(i.tutar, i.odenen_tutar) === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(i.tutar, odenenMap.get(i.id) ?? 0) === filterOdeme) &&
     (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
   )
   const giderler = donemFiltrele(giderlerTumu).filter(i =>
-    (filterOdeme === "tumu" || odemeDurumu(i.tutar, i.odenen_tutar) === filterOdeme) &&
+    (filterOdeme === "tumu" || odemeDurumu(i.tutar, odenenMap.get(i.id) ?? 0) === filterOdeme) &&
     (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
   )
 
   const toplamGelir = islemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
   const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
   const tahsilEdilecek = islemler
-    .filter(i => i.tur === "gelir" && i.odenen_tutar < i.tutar)
-    .reduce((s, i) => s + (i.tutar - i.odenen_tutar), 0)
+    .filter(i => i.tur === "gelir" && (odenenMap.get(i.id) ?? 0) < i.tutar)
+    .reduce((s, i) => s + (i.tutar - (odenenMap.get(i.id) ?? 0)), 0)
   const odenecek = islemler
-    .filter(i => i.tur === "gider" && i.odenen_tutar < i.tutar)
-    .reduce((s, i) => s + (i.tutar - i.odenen_tutar), 0)
+    .filter(i => i.tur === "gider" && (odenenMap.get(i.id) ?? 0) < i.tutar)
+    .reduce((s, i) => s + (i.tutar - (odenenMap.get(i.id) ?? 0)), 0)
 
   function IslemSatir({ islem }: { islem: Islem }) {
-    const kalan = islem.tutar - islem.odenen_tutar
-    const durum = odemeDurumu(islem.tutar, islem.odenen_tutar)
+    const odenen = odenenMap.get(islem.id) ?? 0
+    const kalan = islem.tutar - odenen
+    const durum = odemeDurumu(islem.tutar, odenen)
     const hasStok = stokIslemIds.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
@@ -202,7 +212,7 @@ export function Finans() {
           </p>
           {durum === "kismi_odendi" && (
             <p className="text-xs text-orange-500 mt-0.5">
-              Ödenen: {formatCurrency(islem.odenen_tutar)} · Kalan: {formatCurrency(kalan)}
+              Ödenen: {formatCurrency(odenen)} · Kalan: {formatCurrency(kalan)}
             </p>
           )}
           {durum === "beklemede" && (

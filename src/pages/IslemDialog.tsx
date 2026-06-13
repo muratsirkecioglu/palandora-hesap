@@ -173,14 +173,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               hesap_id: o.hesap_id ?? "",
               aciklama: o.aciklama ?? "",
             })))
-          } else if (editing.odenen_tutar > 0) {
-            // Eski kayıt: odemeler tablosunda satır yok ama ödendi görünüyor
-            setOdemeSatirlar([{
-              tarih: editing.tarih,
-              tutar: String(editing.odenen_tutar),
-              hesap_id: editing.hesap_id ?? "",
-              aciklama: "",
-            }])
           }
         })
 
@@ -333,7 +325,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
     const toplam = parseFloat(form.tutar)
     const gecerliOdemeler = odemeSatirlar.filter(o => parseFloat(o.tutar) > 0)
-    const toplamOdenen = gecerliOdemeler.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
 
     const islemPayload = {
       tarih: form.tarih,
@@ -341,7 +332,6 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       tutar: toplam,
       tur: form.tur,
       kategori: form.kategori,
-      odenen_tutar: toplamOdenen,
       vade_tarihi: form.vade_tarihi || null,
       notlar: form.notlar || null,
       adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
