@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle } from "lucide-react"
-import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithStok, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -49,7 +49,7 @@ function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" |
 export function Finans() {
   const { isAdmin, user } = useAuth()
   const [islemler, setIslemler] = useState<Islem[]>([])
-  const [malzemeler, setMalzemeler] = useState<MalzemeWithFiyat[]>([])
+  const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [stokMaliyetMap, setStokMaliyetMap] = useState<Map<string, number>>(new Map())
@@ -72,28 +72,45 @@ export function Finans() {
 
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
       islemQ,
-      supabase.from("malzemeler").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari)").order("ad"),
-      supabase.from("islem_stok").select("islem_id, miktar, tur, birim_fiyat, malzeme:malzemeler!malzeme_id(miktar, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari))"),
+      supabase.from("malzemeler").select("*").order("ad"),
+      supabase.from("islem_stok").select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, tarih, faturali, nakliye_faturali)"),
       supabase.from("hesaplar").select("*").order("ad"),
       supabase.from("odemeler").select("islem_id, tutar, hesap_id"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
-    setMalzemeler((malzemeData ?? []) as MalzemeWithFiyat[])
     setHesaplar((hesapData ?? []) as Hesap[])
 
+    // Stok hareketlerini işle
+    type StokRow = { islem_id: string; malzeme_id: string; miktar: number; tur: string; birim_fiyat: number; islem: { tutar: number; nakliye_tutari: number | null; tarih: string; faturali: boolean; nakliye_faturali: boolean } | null }
+    const allStok = (stokData ?? []) as unknown as StokRow[]
+
+    // Malzeme bazında stok hesapla (giris - cikis) ve son giris bilgisi
+    const malzemeStokMap = new Map<string, { giris: number; cikis: number; sonGirisFiyat: number | null; sonGirisIslem: StokRow["islem"] | null }>()
+    for (const s of allStok) {
+      const e = malzemeStokMap.get(s.malzeme_id) ?? { giris: 0, cikis: 0, sonGirisFiyat: null, sonGirisIslem: null }
+      if (s.tur === "giris") {
+        e.giris += s.miktar
+        e.sonGirisFiyat = s.birim_fiyat
+        e.sonGirisIslem = s.islem
+      } else {
+        e.cikis += s.miktar
+      }
+      malzemeStokMap.set(s.malzeme_id, e)
+    }
+    const malzemelerWithStok: MalzemeWithStok[] = ((malzemeData ?? []) as import("@/lib/supabase").Malzeme[]).map(m => {
+      const e = malzemeStokMap.get(m.id)
+      return { ...m, stok: e ? e.giris - e.cikis : 0, son_birim_fiyat: e?.sonGirisFiyat ?? null, son_giris_islem: e?.sonGirisIslem ?? null }
+    })
+    setMalzemeler(malzemelerWithStok)
+
+    // Stok işlem id'leri ve maliyet haritası (satırda gösterim için)
     const ids = new Set<string>()
     const mMap = new Map<string, number>()
-    for (const s of (stokData ?? []) as any[]) {
+    for (const s of allStok) {
       ids.add(s.islem_id)
       if (s.tur !== "cikis") continue
-      const ki = s.malzeme?.kaynak_islem
-      const birimFiyat = s.birim_fiyat > 0
-        ? s.birim_fiyat
-        : (ki && s.malzeme.miktar > 0
-            ? (ki.tutar - (ki.nakliye_tutari ?? 0)) / s.malzeme.miktar
-            : 0)
-      mMap.set(s.islem_id, (mMap.get(s.islem_id) ?? 0) + s.miktar * birimFiyat)
+      mMap.set(s.islem_id, (mMap.get(s.islem_id) ?? 0) + s.miktar * s.birim_fiyat)
     }
     setStokIslemIds(ids)
     setStokMaliyetMap(mMap)

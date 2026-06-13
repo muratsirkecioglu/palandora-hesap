@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { TrendingUp, TrendingDown, AlertTriangle, Wallet } from "lucide-react"
-import { supabase, type Islem, type Malzeme } from "@/lib/supabase"
+import { supabase, type Islem } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
@@ -27,19 +27,28 @@ export function Dashboard() {
       const islemQuery = supabase.from("islemler").select("*").order("tarih", { ascending: false })
       if (!isAdmin) islemQuery.eq("kullanici_id", user!.id)
 
-      const malzemeQuery = supabase.from("malzemeler").select("*")
+      const malzemeQuery = supabase.from("malzemeler").select("id, min_miktar")
+      const stokQuery = supabase.from("islem_stok").select("malzeme_id, miktar, tur")
 
-      const [{ data: islemler }, { data: malzemeler }] = await Promise.all([
+      const [{ data: islemler }, { data: malzemeler }, { data: stokData }] = await Promise.all([
         islemQuery,
         malzemeQuery,
+        stokQuery,
       ])
 
       const list = (islemler ?? []) as Islem[]
-      const mList = (malzemeler ?? []) as Malzeme[]
+      const mList = (malzemeler ?? []) as { id: string; min_miktar: number }[]
 
       const toplamGelir = list.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
       const toplamGider = list.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
-      const kritikStok = mList.filter(m => m.miktar <= m.min_miktar).length
+
+      // Dinamik stok hesaplama
+      const stokMap = new Map<string, number>()
+      for (const s of (stokData ?? []) as { malzeme_id: string; miktar: number; tur: string }[]) {
+        const curr = stokMap.get(s.malzeme_id) ?? 0
+        stokMap.set(s.malzeme_id, curr + (s.tur === "giris" ? s.miktar : -s.miktar))
+      }
+      const kritikStok = mList.filter(m => m.min_miktar > 0 && (stokMap.get(m.id) ?? 0) <= m.min_miktar).length
 
       setStats({ toplamGelir, toplamGider, bakiye: toplamGelir - toplamGider, kritikStok })
       setSonIslemler(list.slice(0, 5))

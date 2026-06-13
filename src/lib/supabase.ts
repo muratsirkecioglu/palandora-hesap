@@ -102,16 +102,22 @@ export interface Malzeme {
   id: string
   ad: string
   kategori: string
-  miktar: number
   birim: string
   min_miktar: number
   aciklama: string
-  kaynak_islem_id: string | null
   kullanici_id: string
   created_at: string
   updated_at: string
 }
 
-export type MalzemeWithFiyat = Malzeme & {
-  kaynak_islem: { tutar: number; nakliye_tutari: number | null } | null
+export type MalzemeWithStok = Malzeme & {
+  stok: number
+  son_birim_fiyat: number | null
+  son_giris_islem: {
+    tutar: number
+    nakliye_tutari: number | null
+    nakliye_faturali: boolean
+    tarih: string
+    faturali: boolean
+  } | null
 }

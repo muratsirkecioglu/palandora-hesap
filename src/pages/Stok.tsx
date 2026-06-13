@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import { Pencil, Trash2, Loader2, AlertTriangle, Info, FileCheck, FileX } from "lucide-react"
-import { supabase, type Malzeme } from "@/lib/supabase"
+import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info } from "lucide-react"
+import { supabase, type Malzeme, type MalzemeWithStok } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,16 +14,6 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 const KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
 const BIRIMLER = ["Adet", "Kg", "Lt", "m", "m²", "m³", "Paket", "Kutu", "Ton"]
 
-interface KaynakIslem {
-  tutar: number
-  nakliye_tutari: number | null
-  nakliye_faturali: boolean
-  tarih: string
-  faturali: boolean
-}
-
-type MalzemeRow = Malzeme & { kaynak_islem: KaynakIslem | null }
-
 interface EditForm {
   ad: string
   kategori: string
@@ -32,12 +22,27 @@ interface EditForm {
   aciklama: string
 }
 
+type StokRow = {
+  islem_id: string
+  malzeme_id: string
+  miktar: number
+  tur: string
+  birim_fiyat: number
+  islem: {
+    tutar: number
+    nakliye_tutari: number | null
+    nakliye_faturali: boolean
+    tarih: string
+    faturali: boolean
+  } | null
+}
+
 export function Stok() {
   const { isAdmin, user } = useAuth()
-  const [malzemeler, setMalzemeler] = useState<MalzemeRow[]>([])
+  const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<MalzemeRow | null>(null)
+  const [editing, setEditing] = useState<MalzemeWithStok | null>(null)
   const [form, setForm] = useState<EditForm>({
     ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "", aciklama: "",
   })
@@ -47,11 +52,38 @@ export function Stok() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from("malzemeler")
-      .select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali)")
-      .order("created_at", { ascending: false })
-    setMalzemeler((data ?? []) as MalzemeRow[])
+    const [{ data: malzemeData }, { data: stokData }] = await Promise.all([
+      supabase.from("malzemeler").select("*").order("ad"),
+      supabase.from("islem_stok")
+        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali)")
+        .order("tarih", { ascending: false }),
+    ])
+
+    const rows = (stokData ?? []) as unknown as StokRow[]
+
+    const stokMap = new Map<string, { giris: number; cikis: number; sonGiris: StokRow | null }>()
+    for (const s of rows) {
+      const e = stokMap.get(s.malzeme_id) ?? { giris: 0, cikis: 0, sonGiris: null }
+      if (s.tur === "giris") {
+        e.giris += s.miktar
+        if (!e.sonGiris) e.sonGiris = s  // desc sıralı: ilk = en son
+      } else {
+        e.cikis += s.miktar
+      }
+      stokMap.set(s.malzeme_id, e)
+    }
+
+    const malzemelerWithStok: MalzemeWithStok[] = ((malzemeData ?? []) as Malzeme[]).map(m => {
+      const e = stokMap.get(m.id)
+      return {
+        ...m,
+        stok: e ? e.giris - e.cikis : 0,
+        son_birim_fiyat: e?.sonGiris?.birim_fiyat ?? null,
+        son_giris_islem: e?.sonGiris?.islem ?? null,
+      }
+    })
+
+    setMalzemeler(malzemelerWithStok)
     setLoading(false)
   }
 
@@ -61,7 +93,7 @@ export function Stok() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  function openEdit(m: MalzemeRow) {
+  function openEdit(m: MalzemeWithStok) {
     setEditing(m)
     setForm({
       ad: m.ad,
@@ -90,7 +122,7 @@ export function Stok() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Bu malzemeyi silmek istediğinize emin misiniz?\nBağlı gider kaydı da silinecektir.")) return
+    if (!confirm("Bu malzemeyi silmek istediğinize emin misiniz?\nBağlı stok hareketleri de silinecektir.")) return
     await supabase.from("malzemeler").delete().eq("id", id)
     load()
   }
@@ -102,16 +134,14 @@ export function Stok() {
       return matchSearch && matchKat
     })
     .sort((a, b) => {
-      const biten = (x: MalzemeRow) => x.miktar <= 0
-      if (biten(a) !== biten(b)) return biten(a) ? 1 : -1
-      const dateA = a.kaynak_islem?.tarih ?? a.created_at
-      const dateB = b.kaynak_islem?.tarih ?? b.created_at
-      return dateB.localeCompare(dateA)
+      const kritikA = a.stok <= a.min_miktar
+      const kritikB = b.stok <= b.min_miktar
+      if (kritikA !== kritikB) return kritikA ? -1 : 1
+      return a.ad.localeCompare(b.ad, "tr")
     })
 
-  const kritik = malzemeler.filter(m => m.miktar <= m.min_miktar).length
-  // Toplam değer = bağlı gider işlemlerinin tutarı toplamı
-  const toplamDeger = malzemeler.reduce((s, m) => s + (m.kaynak_islem?.tutar ?? 0), 0)
+  const kritik = malzemeler.filter(m => m.stok <= m.min_miktar && m.min_miktar > 0).length
+  const toplamDeger = malzemeler.reduce((s, m) => s + m.stok * (m.son_birim_fiyat ?? 0), 0)
 
   return (
     <div className="space-y-6">
@@ -163,15 +193,8 @@ export function Stok() {
           ) : (
             <div className="divide-y divide-border">
               {filtered.map(m => {
-                const kritikMi = m.miktar <= m.min_miktar
-                // Birim maliyet = toplam tutar / miktar (nakliye dahil)
-                const birimMaliyet = m.kaynak_islem && m.miktar > 0
-                  ? m.kaynak_islem.tutar / m.miktar
-                  : null
-                // Birim fiyat = (tutar - nakliye) / miktar
-                const birimFiyat = m.kaynak_islem && m.miktar > 0
-                  ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
-                  : null
+                const kritikMi = m.stok <= m.min_miktar && m.min_miktar > 0
+                const gi = m.son_giris_islem
                 return (
                   <div key={m.id} className="flex items-center justify-between py-3 gap-4">
                     <div className="flex-1 min-w-0">
@@ -179,36 +202,31 @@ export function Stok() {
                         <p className="font-medium text-sm">{m.ad}</p>
                         {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
                         <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
-                        {m.kaynak_islem && (
-                          m.kaynak_islem.faturali
+                        {gi && (
+                          gi.faturali
                             ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" aria-label="Faturalı" />
                             : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" aria-label="Faturasız" />
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Min: {m.min_miktar} {m.birim}
-                        {m.kaynak_islem?.tarih && ` · ${formatDate(m.kaynak_islem.tarih)}`}
-                        {m.kaynak_islem?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(m.kaynak_islem.nakliye_tutari)}`}
-                        {m.kaynak_islem?.nakliye_tutari != null && (
-                          m.kaynak_islem.nakliye_faturali
-                            ? <FileCheck className="inline h-3 w-3 ml-1 text-green-600" aria-label="Nakliye Faturalı" />
-                            : <FileX className="inline h-3 w-3 ml-1 text-orange-400" aria-label="Nakliye Faturasız" />
+                        {gi?.tarih && ` · ${formatDate(gi.tarih)}`}
+                        {gi?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(gi.nakliye_tutari)}`}
+                        {gi?.nakliye_tutari != null && (
+                          gi.nakliye_faturali
+                            ? <FileCheck className="inline h-3 w-3 ml-1 text-green-600" />
+                            : <FileX className="inline h-3 w-3 ml-1 text-orange-400" />
                         )}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
                         <p className={`font-semibold text-sm ${kritikMi ? "text-orange-500" : ""}`}>
-                          {m.miktar} {m.birim}
+                          {m.stok} {m.birim}
                         </p>
-                        {birimFiyat !== null && (
+                        {m.son_birim_fiyat != null && (
                           <p className="text-xs text-muted-foreground">
-                            {formatCurrency(birimFiyat)}/{m.birim}
-                          </p>
-                        )}
-                        {birimMaliyet !== null && (
-                          <p className="text-xs font-medium text-blue-600">
-                            Maliyet: {formatCurrency(birimMaliyet)}/{m.birim}
+                            {formatCurrency(m.son_birim_fiyat)}/{m.birim}
                           </p>
                         )}
                       </div>
@@ -233,7 +251,6 @@ export function Stok() {
         </CardContent>
       </Card>
 
-      {/* Düzenleme dialogu — yalnızca tanımlayıcı bilgiler */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type MalzemeWithFiyat, type Hesap, type AppUser } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -73,7 +73,7 @@ interface Props {
   onClose: () => void
   editing: Islem | null
   initialValues?: Islem
-  malzemeler: MalzemeWithFiyat[]
+  malzemeler: MalzemeWithStok[]
   hesaplar: Hesap[]
   onSaved: () => void
 }
@@ -177,12 +177,16 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         })
 
       if (editing.tur === "gider" && editing.kategori === "Malzeme") {
-        supabase.from("malzemeler").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
-          .then(({ data }) => {
-            if (data) {
-              setLinkedMalzemeId(data.id)
-              setMalzemeAlt({ ad: data.ad, mal_kategori: data.kategori, birim: data.birim, miktar: String(data.miktar), min_miktar: String(data.min_miktar) })
-            }
+        supabase.from("islem_stok")
+          .select("malzeme_id, miktar")
+          .eq("islem_id", editing.id)
+          .eq("tur", "giris")
+          .maybeSingle()
+          .then(async ({ data: giris }) => {
+            if (!giris) return
+            setLinkedMalzemeId(giris.malzeme_id)
+            const { data: m } = await supabase.from("malzemeler").select("*").eq("id", giris.malzeme_id).maybeSingle()
+            if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (editing.tur === "gider" && editing.kategori === "Demirbaş") {
         supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
@@ -193,7 +197,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             }
           })
       } else {
-        supabase.from("islem_stok").select("*").eq("islem_id", editing.id).then(({ data }) => {
+        supabase.from("islem_stok").select("*").eq("islem_id", editing.id).eq("tur", "cikis").then(({ data }) => {
           if (data && data.length > 0) {
             setStokEkle(true)
             setStokSatirlar(data.map(s => ({
@@ -223,9 +227,15 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       })
       // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
-        supabase.from("malzemeler").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
-          .then(({ data }) => {
-            if (data) setMalzemeAlt({ ad: data.ad, mal_kategori: data.kategori, birim: data.birim, miktar: String(data.miktar), min_miktar: String(data.min_miktar) })
+        supabase.from("islem_stok")
+          .select("malzeme_id, miktar")
+          .eq("islem_id", initialValues.id)
+          .eq("tur", "giris")
+          .maybeSingle()
+          .then(async ({ data: giris }) => {
+            if (!giris) return
+            const { data: m } = await supabase.from("malzemeler").select("*").eq("id", giris.malzeme_id).maybeSingle()
+            if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (initialValues.tur === "gider" && initialValues.kategori === "Demirbaş") {
         supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
@@ -233,7 +243,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             if (data) setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "", zimmet_kullanici_id: data.zimmet_kullanici_id ?? "", zimmet_tarihi: data.zimmet_tarihi ?? "" })
           })
       } else if (initialValues.tur === "gelir") {
-        supabase.from("islem_stok").select("*").eq("islem_id", initialValues.id).then(({ data }) => {
+        supabase.from("islem_stok").select("*").eq("islem_id", initialValues.id).eq("tur", "cikis").then(({ data }) => {
           if (data && data.length > 0) {
             setStokEkle(true)
             setStokSatirlar(data.map(s => ({ malzeme_id: s.malzeme_id, miktar: String(s.miktar), birim_fiyat: String(s.birim_fiyat) })))
@@ -279,11 +289,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   function onMalzemeSelect(i: number, malzemeId: string) {
     const m = malzemeler.find(m => m.id === malzemeId)
-    const birimMaliyet = m?.kaynak_islem && m.miktar > 0
-      ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
-      : 0
+    const birimFiyat = m?.son_birim_fiyat ?? 0
     setStokSatirlar(prev => prev.map((s, idx) =>
-      idx === i ? { ...s, malzeme_id: malzemeId, birim_fiyat: String(birimMaliyet) } : s
+      idx === i ? { ...s, malzeme_id: malzemeId, birim_fiyat: String(birimFiyat) } : s
     ))
   }
 
@@ -347,11 +355,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       const { error } = await supabase.from("islemler").update(islemPayload).eq("id", editing.id)
       if (error) { setError(error.message); setSaving(false); return }
       islemId = editing.id
-      // Mevcut ödemeleri sil, yenilerini ekle
       await supabase.from("odemeler").delete().eq("islem_id", islemId)
-      if (!isMalzemeGider) {
-        await supabase.from("islem_stok").delete().eq("islem_id", islemId)
-      }
+      await supabase.from("islem_stok").delete().eq("islem_id", islemId)
     } else {
       const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
       if (error) { setError(error.message); setSaving(false); return }
@@ -399,26 +404,36 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       }
     }
 
-    // ── Malzeme gider: stok kaydı oluştur / güncelle ──────────────────────
+    // ── Malzeme gider: malzeme kaydı + giris stok hareketi ───────────────
     if (isMalzemeGider) {
       const miktar = parseFloat(malzemeAlt.miktar) || 0
+      const nakliye = parseFloat(form.nakliye_tutari) || 0
+      const birimFiyat = miktar > 0 ? (toplam - nakliye) / miktar : 0
       const malzemePayload = {
         ad: malzemeAlt.ad,
         kategori: malzemeAlt.mal_kategori,
         birim: malzemeAlt.birim,
-        miktar,
         min_miktar: parseFloat(malzemeAlt.min_miktar) || 0,
         aciklama: "",
         kullanici_id: user!.id,
-        kaynak_islem_id: islemId,
       }
 
-      if (linkedMalzemeId) {
-        await supabase.from("malzemeler").update({
-          ...malzemePayload, updated_at: new Date().toISOString()
-        }).eq("id", linkedMalzemeId)
+      let malzemeId = linkedMalzemeId
+      if (malzemeId) {
+        await supabase.from("malzemeler").update({ ...malzemePayload, updated_at: new Date().toISOString() }).eq("id", malzemeId)
       } else {
-        await supabase.from("malzemeler").insert(malzemePayload)
+        const { data: newM } = await supabase.from("malzemeler").insert(malzemePayload).select("id").single()
+        malzemeId = newM?.id ?? null
+      }
+
+      if (malzemeId) {
+        await supabase.from("islem_stok").insert({
+          islem_id: islemId,
+          malzeme_id: malzemeId,
+          miktar,
+          tur: "giris",
+          birim_fiyat: birimFiyat,
+        })
       }
     }
 
@@ -782,14 +797,11 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                           <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
                             <SelectContent>
-                              {malzemeler.filter(m => m.miktar > 0 || m.id === satir.malzeme_id).map(m => {
-                                const birimFiyat = m.kaynak_islem && m.miktar > 0
-                                  ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
-                                  : null
+                              {malzemeler.filter(m => m.stok > 0 || m.id === satir.malzeme_id).map(m => {
                                 return (
                                   <SelectItem key={m.id} value={m.id}>
-                                    {m.ad} · {m.miktar} {m.birim}
-                                    {birimFiyat !== null ? ` · ${formatCurrency(birimFiyat)}/${m.birim}` : ""}
+                                    {m.ad} · {m.stok} {m.birim}
+                                    {m.son_birim_fiyat ? ` · ${formatCurrency(m.son_birim_fiyat)}/${m.birim}` : ""}
                                   </SelectItem>
                                 )
                               })}
