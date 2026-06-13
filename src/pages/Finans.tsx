@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -54,6 +54,7 @@ export function Finans() {
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [stokMaliyetMap, setStokMaliyetMap] = useState<Map<string, number>>(new Map())
   const [odenenMap, setOdenenMap] = useState<Map<string, number>>(new Map())
+  const [eksikHesapSet, setEksikHesapSet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
@@ -74,7 +75,7 @@ export function Finans() {
       supabase.from("malzemeler").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari)").order("ad"),
       supabase.from("islem_stok").select("islem_id, miktar, tur, birim_fiyat, malzeme:malzemeler!malzeme_id(miktar, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari))"),
       supabase.from("hesaplar").select("*").order("ad"),
-      supabase.from("odemeler").select("islem_id, tutar"),
+      supabase.from("odemeler").select("islem_id, tutar, hesap_id"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
@@ -98,10 +99,13 @@ export function Finans() {
     setStokMaliyetMap(mMap)
 
     const oMap = new Map<string, number>()
-    for (const o of (odemeData ?? []) as { islem_id: string; tutar: number }[]) {
+    const eksikSet = new Set<string>()
+    for (const o of (odemeData ?? []) as { islem_id: string; tutar: number; hesap_id: string | null }[]) {
       oMap.set(o.islem_id, (oMap.get(o.islem_id) ?? 0) + o.tutar)
+      if (!o.hesap_id) eksikSet.add(o.islem_id)
     }
     setOdenenMap(oMap)
+    setEksikHesapSet(eksikSet)
 
     setLoading(false)
   }
@@ -180,6 +184,7 @@ export function Finans() {
     const kalan = islem.tutar - odenen
     const durum = odemeDurumu(islem.tutar, odenen)
     const hasStok = stokIslemIds.has(islem.id)
+    const eksikHesap = eksikHesapSet.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
     const netKar = malzemeMaliyeti > 0 ? islem.tutar - malzemeMaliyeti : null
@@ -204,6 +209,11 @@ export function Finans() {
               <Badge variant="outline" className="text-xs gap-1 text-blue-500 border-blue-200">
                 <ArrowLeftRight className="h-2.5 w-2.5" /> Transfer
               </Badge>
+            )}
+            {eksikHesap && (
+              <span title="Ödeme kaynağı eksik" className="text-orange-500">
+                <AlertTriangle className="h-3.5 w-3.5" />
+              </span>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -272,6 +282,17 @@ export function Finans() {
           <Plus className="h-4 w-4" /> Yeni İşlem
         </Button>
       </div>
+
+      {/* Ödeme kaynağı eksik uyarısı */}
+      {eksikHesapSet.size > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{eksikHesapSet.size}</strong> işlemde ödeme kaynağı (hesap) eksik —
+            satır üzerindeki <AlertTriangle className="inline h-3.5 w-3.5" /> ikonuna tıklayarak düzenleyin.
+          </span>
+        </div>
+      )}
 
       {/* Özet kartlar */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
