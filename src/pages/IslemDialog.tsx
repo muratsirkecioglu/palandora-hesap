@@ -288,12 +288,17 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   }
 
   function addOdeme() {
-    setOdemeSatirlar(prev => [...prev, {
-      tarih: form.tarih,
-      tutar: "",
-      hesap_id: "",
-      aciklama: "",
-    }])
+    setOdemeSatirlar(prev => {
+      const toplam = parseFloat(form.tutar) || 0
+      const odenen = prev.reduce((s, o) => s + (parseFloat(o.tutar) || 0), 0)
+      const kalan = Math.max(0, toplam - odenen)
+      return [...prev, {
+        tarih: form.tarih,
+        tutar: kalan > 0 ? String(kalan) : "",
+        hesap_id: "",
+        aciklama: "",
+      }]
+    })
   }
 
   function removeOdeme(i: number) {
