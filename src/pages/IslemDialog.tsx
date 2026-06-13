@@ -357,6 +357,10 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       islemId = editing.id
       await supabase.from("odemeler").delete().eq("islem_id", islemId)
       await supabase.from("islem_stok").delete().eq("islem_id", islemId)
+      // Kategori Malzeme'den başka bir türe değiştiyse bağlı malzeme kaydını sil
+      if (linkedMalzemeId && !isMalzemeGider) {
+        await supabase.from("malzemeler").delete().eq("id", linkedMalzemeId)
+      }
     } else {
       const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
       if (error) { setError(error.message); setSaving(false); return }
