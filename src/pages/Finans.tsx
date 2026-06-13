@@ -21,7 +21,7 @@ function ayGrupla(list: Islem[]) {
     .map(([key, items]) => ({
       key,
       label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "long", year: "numeric" }),
-      toplam: items.reduce((s, i) => s + i.tutar, 0),
+      toplam: items.reduce((s, i) => s + i.tutar + (i.nakliye_tutari ?? 0), 0),
       islemler: items,
     }))
 }
@@ -160,8 +160,8 @@ export function Finans() {
       const key = i.tarih.slice(0, 7)
       if (!map.has(key)) map.set(key, { gelir: 0, gider: 0 })
       const e = map.get(key)!
-      if (i.tur === "gelir") e.gelir += i.tutar
-      else e.gider += i.tutar
+      if (i.tur === "gelir") e.gelir += i.tutar + (i.nakliye_tutari ?? 0)
+      else e.gider += i.tutar + (i.nakliye_tutari ?? 0)
     }
     const rows = Array.from(map.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
