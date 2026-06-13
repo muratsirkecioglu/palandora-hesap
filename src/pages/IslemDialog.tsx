@@ -173,6 +173,14 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               hesap_id: o.hesap_id ?? "",
               aciklama: o.aciklama ?? "",
             })))
+          } else if (editing.odenen_tutar > 0) {
+            // Eski kayıt: odemeler tablosunda satır yok ama ödendi görünüyor
+            setOdemeSatirlar([{
+              tarih: editing.tarih,
+              tutar: String(editing.odenen_tutar),
+              hesap_id: editing.hesap_id ?? "",
+              aciklama: "",
+            }])
           }
         })
 
