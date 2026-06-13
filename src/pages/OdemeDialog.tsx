@@ -1,25 +1,27 @@
 import { useEffect, useState } from "react"
 import { Loader2, Trash2 } from "lucide-react"
-import { supabase, type Islem, type Odeme } from "@/lib/supabase"
+import { supabase, type Islem, type Odeme, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
 interface Props {
   open: boolean
   onClose: () => void
   islem: Islem | null
+  hesaplar: Hesap[]
   onSaved: () => void
 }
 
-export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
+export function OdemeDialog({ open, onClose, islem, hesaplar, onSaved }: Props) {
   const { user, isAdmin } = useAuth()
   const [odemeler, setOdemeler] = useState<Odeme[]>([])
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "" })
+  const [form, setForm] = useState({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "", hesap_id: "" })
   const [saving, setSaving] = useState(false)
 
   async function loadOdemeler() {
@@ -33,7 +35,7 @@ export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
   useEffect(() => {
     if (open && islem) {
       loadOdemeler()
-      setForm({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "" })
+      setForm({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "", hesap_id: "" })
     }
   }, [open, islem])
 
@@ -45,9 +47,10 @@ export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
       tarih: form.tarih,
       tutar: parseFloat(form.tutar),
       aciklama: form.aciklama || null,
+      hesap_id: form.hesap_id || null,
       kullanici_id: user!.id,
     })
-    setForm({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "" })
+    setForm({ tarih: new Date().toISOString().slice(0, 10), tutar: "", aciklama: "", hesap_id: "" })
     setSaving(false)
     await loadOdemeler()
     onSaved()
@@ -100,11 +103,17 @@ export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
           ) : (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ödeme Geçmişi</p>
-              {odemeler.map(o => (
+              {odemeler.map(o => {
+                const hesapAd = o.hesap_id ? hesaplar.find(h => h.id === o.hesap_id)?.ad : null
+                return (
                 <div key={o.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
                   <div>
                     <p className="text-sm font-medium">{formatCurrency(o.tutar)}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(o.tarih)}{o.aciklama ? ` · ${o.aciklama}` : ""}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(o.tarih)}
+                      {hesapAd && ` · ${hesapAd}`}
+                      {o.aciklama ? ` · ${o.aciklama}` : ""}
+                    </p>
                   </div>
                   {(isAdmin || o.kullanici_id === user?.id) && (
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleSil(o.id)}>
@@ -112,7 +121,8 @@ export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
                     </Button>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -136,6 +146,20 @@ export function OdemeDialog({ open, onClose, islem, onSaved }: Props) {
                   <Input type="date" value={form.tarih} onChange={e => setForm(f => ({ ...f, tarih: e.target.value }))} className="h-8 text-sm" />
                 </div>
               </div>
+              {hesaplar.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Ödeme Kaynağı (isteğe bağlı)</Label>
+                  <Select value={form.hesap_id || "__none__"} onValueChange={v => setForm(f => ({ ...f, hesap_id: v === "__none__" ? "" : v }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Hesap seçin..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— Hesap seçilmedi —</SelectItem>
+                      {hesaplar.filter(h => h.aktif).map(h => (
+                        <SelectItem key={h.id} value={h.id}>{h.ad}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label className="text-xs">Açıklama (isteğe bağlı)</Label>
                 <Input value={form.aciklama} onChange={e => setForm(f => ({ ...f, aciklama: e.target.value }))} placeholder="Açıklama..." className="h-8 text-sm" />

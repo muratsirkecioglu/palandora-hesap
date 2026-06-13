@@ -456,6 +456,7 @@ export function Finans() {
         open={odemeDialogOpen}
         onClose={() => setOdemeDialogOpen(false)}
         islem={odemeIslem}
+        hesaplar={hesaplar}
         onSaved={load}
       />
     </div>

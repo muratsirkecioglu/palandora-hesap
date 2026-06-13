@@ -62,6 +62,7 @@ export interface Odeme {
   tarih: string
   tutar: number
   aciklama: string | null
+  hesap_id: string | null
   kullanici_id: string
   created_at: string
 }
