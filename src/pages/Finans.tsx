@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, CreditCard, Package, ArrowLeftRight, FileCheck, FileX, Copy } from "lucide-react"
-import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -41,7 +41,7 @@ const ODEME_DURUM_VARIANT: Record<string, "success" | "warning" | "destructive">
 export function Finans() {
   const { isAdmin, user } = useAuth()
   const [islemler, setIslemler] = useState<Islem[]>([])
-  const [malzemeler, setMalzemeler] = useState<Malzeme[]>([])
+  const [malzemeler, setMalzemeler] = useState<MalzemeWithFiyat[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -63,13 +63,13 @@ export function Finans() {
 
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }] = await Promise.all([
       islemQ,
-      supabase.from("malzemeler").select("*").order("ad"),
+      supabase.from("malzemeler").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, nakliye_tutari)").order("ad"),
       supabase.from("islem_stok").select("islem_id"),
       supabase.from("hesaplar").select("*").order("ad"),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
-    setMalzemeler((malzemeData ?? []) as Malzeme[])
+    setMalzemeler((malzemeData ?? []) as MalzemeWithFiyat[])
     setHesaplar((hesapData ?? []) as Hesap[])
     setStokIslemIds(new Set((stokData ?? []).map((s: { islem_id: string }) => s.islem_id)))
     setLoading(false)

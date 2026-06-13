@@ -111,3 +111,7 @@ export interface Malzeme {
   created_at: string
   updated_at: string
 }
+
+export type MalzemeWithFiyat = Malzeme & {
+  kaynak_islem: { tutar: number; nakliye_tutari: number | null } | null
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type Malzeme, type Hesap } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -61,7 +61,7 @@ interface Props {
   onClose: () => void
   editing: Islem | null
   initialValues?: Islem
-  malzemeler: Malzeme[]
+  malzemeler: MalzemeWithFiyat[]
   hesaplar: Hesap[]
   onSaved: () => void
 }
@@ -611,9 +611,17 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                           <Select value={satir.malzeme_id} onValueChange={v => onMalzemeSelect(i, v)}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seçin..." /></SelectTrigger>
                             <SelectContent>
-                              {malzemeler.filter(m => m.miktar > 0).map(m => (
-                                <SelectItem key={m.id} value={m.id}>{m.ad} ({m.miktar} {m.birim})</SelectItem>
-                              ))}
+                              {malzemeler.filter(m => m.miktar > 0).map(m => {
+                                const birimFiyat = m.kaynak_islem && m.miktar > 0
+                                  ? (m.kaynak_islem.tutar - (m.kaynak_islem.nakliye_tutari ?? 0)) / m.miktar
+                                  : null
+                                return (
+                                  <SelectItem key={m.id} value={m.id}>
+                                    {m.ad} · {m.miktar} {m.birim}
+                                    {birimFiyat !== null ? ` · ${formatCurrency(birimFiyat)}/${m.birim}` : ""}
+                                  </SelectItem>
+                                )
+                              })}
                             </SelectContent>
                           </Select>
                         </div>
