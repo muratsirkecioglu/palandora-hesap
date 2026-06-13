@@ -195,9 +195,10 @@ export function Stok() {
             <div className="divide-y divide-border">
               {filtered.map(m => {
                 const kritikMi = m.stok <= m.min_miktar && m.min_miktar > 0
+                const bitmisMi = m.stok <= 0
                 const gi = m.son_giris_islem
                 return (
-                  <div key={m.id} className="flex items-center justify-between py-3 gap-4">
+                  <div key={m.id} className={`flex items-center justify-between py-3 gap-4 ${bitmisMi ? "opacity-40" : ""}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm">{m.ad}</p>
