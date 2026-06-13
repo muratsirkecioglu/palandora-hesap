@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type MalzemeWithFiyat, type Hesap } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithFiyat, type Hesap, type AppUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,6 +44,8 @@ interface DemirbasAlt {
   seri_no: string
   konum: string
   garanti_bitis: string
+  zimmet_kullanici_id: string
+  zimmet_tarihi: string
 }
 
 const defaultDemirbasAlt: DemirbasAlt = {
@@ -54,6 +56,8 @@ const defaultDemirbasAlt: DemirbasAlt = {
   seri_no: "",
   konum: "",
   garanti_bitis: "",
+  zimmet_kullanici_id: "",
+  zimmet_tarihi: "",
 }
 
 interface Props {
@@ -91,6 +95,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [linkedMalzemeId, setLinkedMalzemeId] = useState<string | null>(null)
   const [demirbasAlt, setDemirbasAlt] = useState<DemirbasAlt>(defaultDemirbasAlt)
   const [linkedDemirbasId, setLinkedDemirbasId] = useState<string | null>(null)
+  const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,6 +110,13 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     if (miktar <= 0 || tutar <= 0) return null
     return (tutar - nakliye) / miktar
   }, [form.tutar, form.nakliye_tutari, malzemeAlt.miktar])
+
+  useEffect(() => {
+    if (kullanicilar.length === 0) {
+      supabase.from("kullanicilar").select("*").eq("aktif", true).order("ad_soyad")
+        .then(({ data }) => setKullanicilar((data ?? []) as AppUser[]))
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -144,7 +156,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           .then(({ data }) => {
             if (data) {
               setLinkedDemirbasId(data.id)
-              setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "" })
+              setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "", zimmet_kullanici_id: data.zimmet_kullanici_id ?? "", zimmet_tarihi: data.zimmet_tarihi ?? "" })
             }
           })
       } else {
@@ -295,17 +307,20 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         seri_no: demirbasAlt.seri_no || null,
         konum: demirbasAlt.konum || null,
         garanti_bitis: demirbasAlt.garanti_bitis || null,
+        zimmet_kullanici_id: demirbasAlt.zimmet_kullanici_id || null,
+        zimmet_tarihi: demirbasAlt.zimmet_tarihi || null,
         alis_fiyati: toplam,
         alis_tarihi: form.tarih,
         durum: "aktif" as const,
         kaynak_islem_id: islemId,
-        kullanici_id: user!.id,
         updated_at: new Date().toISOString(),
       }
       if (linkedDemirbasId) {
-        await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
+        const { error: dbErr } = await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
+        if (dbErr) { setError(dbErr.message); setSaving(false); return }
       } else {
-        await supabase.from("demirbaslar").insert(demirbasPayload)
+        const { error: dbErr } = await supabase.from("demirbaslar").insert(demirbasPayload)
+        if (dbErr) { setError(dbErr.message); setSaving(false); return }
       }
     }
 
@@ -575,6 +590,29 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               <div className="space-y-1.5">
                 <Label>Garanti Bitiş</Label>
                 <Input type="date" value={demirbasAlt.garanti_bitis} onChange={e => setDA("garanti_bitis", e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-3 border border-border rounded-lg p-3">
+              <p className="text-xs font-medium text-muted-foreground">Zimmet (isteğe bağlı)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Zimmetli Kişi</Label>
+                  <Select
+                    value={demirbasAlt.zimmet_kullanici_id || "bos"}
+                    onValueChange={v => setDA("zimmet_kullanici_id", v === "bos" ? "" : v)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bos">— Zimmet yok —</SelectItem>
+                      {kullanicilar.map(k => <SelectItem key={k.id} value={k.id}>{k.ad_soyad}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Zimmet Tarihi</Label>
+                  <Input type="date" value={demirbasAlt.zimmet_tarihi} onChange={e => setDA("zimmet_tarihi", e.target.value)} />
+                </div>
               </div>
             </div>
 
