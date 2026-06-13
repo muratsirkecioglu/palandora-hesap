@@ -48,7 +48,7 @@ export function Finans() {
   const [filterOdeme, setFilterOdeme] = useState<"tumu" | "odendi" | "kismi_odendi" | "beklemede">("tumu")
   const [filterGelirKat, setFilterGelirKat] = useState("tumu")
   const [filterGiderKat, setFilterGiderKat] = useState("tumu")
-  const [filterDonem, setFilterDonem] = useState<"tum" | "bu_ay" | "gecen_ay" | "son_3_ay" | "bu_yil">("tum")
+  const [filterDonem, setFilterDonem] = useState("tum")
   const [ozetFiltre, setOzetFiltre] = useState<"son6ay" | "tumzamanlar">("son6ay")
   const [islemDialogOpen, setIslemDialogOpen] = useState(false)
   const [odemeDialogOpen, setOdemeDialogOpen] = useState(false)
@@ -90,26 +90,15 @@ export function Finans() {
 
   function donemFiltrele(list: Islem[]): Islem[] {
     if (filterDonem === "tum") return list
-    const now = new Date()
-    let start: Date, end: Date
-    if (filterDonem === "bu_ay") {
-      start = new Date(now.getFullYear(), now.getMonth(), 1)
-      end = now
-    } else if (filterDonem === "gecen_ay") {
-      start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      end = new Date(now.getFullYear(), now.getMonth(), 0)
-    } else if (filterDonem === "son_3_ay") {
-      start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
-      end = now
-    } else {
-      start = new Date(now.getFullYear(), 0, 1)
-      end = now
-    }
-    return list.filter(i => {
-      const d = new Date(i.tarih + "T12:00:00")
-      return d >= start && d <= end
-    })
+    return list.filter(i => i.tarih.slice(0, 7) === filterDonem)
   }
+
+  const mevcutAylar = Array.from(new Set(islemler.map(i => i.tarih.slice(0, 7))))
+    .sort((a, b) => b.localeCompare(a))
+    .map(key => ({
+      key,
+      label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "long", year: "numeric" }),
+    }))
 
   const ayOzetleri = (() => {
     const map = new Map<string, { gelir: number; gider: number }>()
@@ -322,14 +311,13 @@ export function Finans() {
 
       {/* Filtreler */}
       <div className="flex justify-end gap-2 flex-wrap">
-        <Select value={filterDonem} onValueChange={v => setFilterDonem(v as typeof filterDonem)}>
-          <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+        <Select value={filterDonem} onValueChange={setFilterDonem}>
+          <SelectTrigger className="h-8 w-44 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="tum">Tüm Zamanlar</SelectItem>
-            <SelectItem value="bu_ay">Bu Ay</SelectItem>
-            <SelectItem value="gecen_ay">Geçen Ay</SelectItem>
-            <SelectItem value="son_3_ay">Son 3 Ay</SelectItem>
-            <SelectItem value="bu_yil">Bu Yıl</SelectItem>
+            {mevcutAylar.map(({ key, label }) => (
+              <SelectItem key={key} value={key} className="capitalize">{label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={filterOdeme} onValueChange={v => setFilterOdeme(v as typeof filterOdeme)}>
