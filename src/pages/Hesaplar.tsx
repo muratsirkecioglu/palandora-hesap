@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User, ArrowLeftRight } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User, ArrowLeftRight, X } from "lucide-react"
 import { supabase, type Hesap } from "@/lib/supabase"
 import { TransferDialog } from "./TransferDialog"
 import { useAuth } from "@/contexts/AuthContext"
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 
 const TUR_LABEL: Record<string, string> = {
   banka: "Banka",
@@ -34,6 +34,15 @@ interface HesapRow extends Hesap {
   bakiye: number
 }
 
+interface Hareket {
+  id: string
+  tarih: string
+  tutar: number
+  aciklama: string | null
+  islem: { aciklama: string; tur: string; kategori: string } | null
+  bakiye: number
+}
+
 const defaultForm = {
   ad: "",
   tur: "banka" as Hesap["tur"],
@@ -52,6 +61,9 @@ export function Hesaplar() {
   const [editing, setEditing] = useState<Hesap | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
+  const [selectedHesapId, setSelectedHesapId] = useState<string | null>(null)
+  const [hareketler, setHareketler] = useState<Hareket[]>([])
+  const [hareketLoading, setHareketLoading] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -77,6 +89,30 @@ export function Hesaplar() {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (!selectedHesapId) { setHareketler([]); return }
+    setHareketLoading(true)
+
+    type RawRow = { id: string; tarih: string; tutar: number; aciklama: string | null; islem: { aciklama: string; tur: string; kategori: string } | null }
+
+    supabase.from("odemeler")
+      .select("id, tarih, tutar, aciklama, islem:islemler!islem_id(aciklama, tur, kategori)")
+      .eq("hesap_id", selectedHesapId)
+      .order("tarih", { ascending: true })
+      .then(({ data }) => {
+        const hesap = hesaplar.find(h => h.id === selectedHesapId)
+        const baslangic = hesap?.bakiye_baslangic ?? 0
+        let bakiye = baslangic
+        const rows = ((data ?? []) as unknown as RawRow[]).map(o => {
+          const delta = o.islem?.tur === "gelir" ? o.tutar : -o.tutar
+          bakiye += delta
+          return { ...o, bakiye }
+        })
+        setHareketler(rows.reverse())
+        setHareketLoading(false)
+      })
+  }, [selectedHesapId, hesaplar])
 
   function f(field: string, value: string | boolean) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -126,12 +162,14 @@ export function Hesaplar() {
   async function handleDelete(id: string) {
     if (!confirm("Bu hesabı silmek istediğinize emin misiniz?\nBağlı işlemlerin hesap ilişkisi kaldırılacak.")) return
     await supabase.from("hesaplar").delete().eq("id", id)
+    if (selectedHesapId === id) setSelectedHesapId(null)
     load()
   }
 
   const toplamBakiye = hesaplar.filter(h => h.aktif).reduce((s, h) => s + h.bakiye, 0)
   const toplamGelir = hesaplar.reduce((s, h) => s + h.gelir, 0)
   const toplamGider = hesaplar.reduce((s, h) => s + h.gider, 0)
+  const selectedHesap = hesaplar.find(h => h.id === selectedHesapId) ?? null
 
   return (
     <div className="space-y-6">
@@ -174,58 +212,140 @@ export function Hesaplar() {
         <Card><CardContent className="py-16 text-center text-muted-foreground text-sm">Henüz hesap tanımlanmamış</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {hesaplar.map(h => (
-            <Card key={h.id} className={h.aktif ? "" : "opacity-60"}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <TurIcon tur={h.tur} className="h-4 w-4 text-primary" />
+          {hesaplar.map(h => {
+            const isSelected = h.id === selectedHesapId
+            return (
+              <Card
+                key={h.id}
+                className={`cursor-pointer transition-all ${h.aktif ? "" : "opacity-60"} ${isSelected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-border"}`}
+                onClick={() => setSelectedHesapId(isSelected ? null : h.id)}
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? "bg-primary text-primary-foreground" : "bg-primary/10"}`}>
+                        <TurIcon tur={h.tur} className={`h-4 w-4 ${isSelected ? "text-primary-foreground" : "text-primary"}`} />
+                      </div>
+                      <div>
+                        <CardTitle className="text-sm font-semibold">{h.ad}</CardTitle>
+                        <p className="text-xs text-muted-foreground">{TUR_LABEL[h.tur]} · {h.para_birimi}</p>
+                      </div>
+                    </div>
+                    {!h.aktif && <Badge variant="outline" className="text-xs">Pasif</Badge>}
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-3">
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-0.5">Güncel Bakiye</p>
+                    <p className={`text-xl font-bold ${h.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      {formatCurrency(h.bakiye)}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Başlangıç</p>
+                      <p className="font-medium">{formatCurrency(h.bakiye_baslangic)}</p>
                     </div>
                     <div>
-                      <CardTitle className="text-sm font-semibold">{h.ad}</CardTitle>
-                      <p className="text-xs text-muted-foreground">{TUR_LABEL[h.tur]} · {h.para_birimi}</p>
+                      <p className="text-muted-foreground">Giren</p>
+                      <p className="font-medium text-green-600">+{formatCurrency(h.gelir)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Çıkan</p>
+                      <p className="font-medium text-red-500">-{formatCurrency(h.gider)}</p>
                     </div>
                   </div>
-                  {!h.aktif && <Badge variant="outline" className="text-xs">Pasif</Badge>}
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-3">
-                <div className="rounded-lg bg-muted/50 p-3 text-center">
-                  <p className="text-xs text-muted-foreground mb-0.5">Güncel Bakiye</p>
-                  <p className={`text-xl font-bold ${h.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
-                    {formatCurrency(h.bakiye)}
-                  </p>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div>
-                    <p className="text-muted-foreground">Başlangıç</p>
-                    <p className="font-medium">{formatCurrency(h.bakiye_baslangic)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Giren</p>
-                    <p className="font-medium text-green-600">+{formatCurrency(h.gelir)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Çıkan</p>
-                    <p className="font-medium text-red-500">-{formatCurrency(h.gider)}</p>
-                  </div>
-                </div>
-                {h.notlar && <p className="text-xs text-muted-foreground italic">{h.notlar}</p>}
-                {isAdmin && (
-                  <div className="flex justify-end gap-1 pt-1 border-t border-border">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(h)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(h.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                  {h.notlar && <p className="text-xs text-muted-foreground italic">{h.notlar}</p>}
+                  {isAdmin && (
+                    <div className="flex justify-end gap-1 pt-1 border-t border-border" onClick={e => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(h)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(h.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
+      )}
+
+      {/* Hesap Hareketleri */}
+      {selectedHesap && (
+        <Card>
+          <CardHeader className="pb-3 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <TurIcon tur={selectedHesap.tur} className="h-4 w-4 text-primary" />
+                  {selectedHesap.ad} — Hareketler
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">{hareketler.length} kayıt</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedHesapId(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-0">
+            {hareketLoading ? (
+              <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : hareketler.length === 0 ? (
+              <p className="text-center text-muted-foreground py-10 text-sm">Bu hesapta kayıtlı hareket yok</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="text-left font-medium px-4 py-2">Tarih</th>
+                      <th className="text-left font-medium px-3 py-2">Açıklama</th>
+                      <th className="text-left font-medium px-3 py-2 hidden sm:table-cell">Kategori</th>
+                      <th className="text-right font-medium px-3 py-2">Tutar</th>
+                      <th className="text-right font-medium px-4 py-2">Bakiye</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {hareketler.map(h => {
+                      const gelirMi = h.islem?.tur === "gelir"
+                      return (
+                        <tr key={h.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                            {formatDate(h.tarih)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <p className="font-medium">{h.islem?.aciklama ?? "—"}</p>
+                            {h.aciklama && <p className="text-muted-foreground">{h.aciklama}</p>}
+                          </td>
+                          <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">
+                            {h.islem?.kategori ?? "—"}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${gelirMi ? "text-green-600" : "text-red-500"}`}>
+                            {gelirMi ? "+" : "-"}{formatCurrency(h.tutar)}
+                          </td>
+                          <td className={`px-4 py-2 text-right font-medium whitespace-nowrap ${h.bakiye >= 0 ? "text-foreground" : "text-red-500"}`}>
+                            {formatCurrency(h.bakiye)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+                      <td colSpan={3} className="px-4 py-2 hidden sm:table-cell">Güncel Bakiye</td>
+                      <td colSpan={2} className="px-4 py-2 sm:hidden">Güncel Bakiye</td>
+                      <td colSpan={2} className={`px-4 py-2 text-right hidden sm:table-cell ${selectedHesap.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
+                        {formatCurrency(selectedHesap.bakiye)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
