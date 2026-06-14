@@ -117,7 +117,7 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-background border-b border-border">
+      <div className="sm:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-background border-b border-border">
         <div className="flex items-center gap-2">
           <Building2 className="h-5 w-5 text-primary" />
           <span className="font-semibold text-sm">Palandora</span>
@@ -130,21 +130,21 @@ export function Sidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 z-30 bg-black/50"
+          className="sm:hidden fixed inset-0 z-30 bg-black/50"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Mobile sidebar */}
       <div className={cn(
-        "md:hidden fixed top-0 left-0 bottom-0 z-40 w-64 bg-background border-r border-border flex flex-col transition-transform",
+        "sm:hidden fixed top-0 left-0 bottom-0 z-40 w-64 bg-background border-r border-border flex flex-col transition-transform",
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <NavItems />
       </div>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:flex w-64 border-r border-border bg-background flex-col flex-shrink-0 h-screen sticky top-0">
+      <div className="hidden sm:flex w-64 border-r border-border bg-background flex-col flex-shrink-0 h-screen sticky top-0">
         <NavItems />
       </div>
     </>
