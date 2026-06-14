@@ -163,7 +163,12 @@ export function Stok() {
     .sort((a, b) => {
       const bitmiA = a.stok <= 0
       const bitmiB = b.stok <= 0
-      if (bitmiA !== bitmiB) return bitmiA ? 1 : -1
+      const faturaliA = a.son_giris_islem?.faturali === true
+      const faturaliB = b.son_giris_islem?.faturali === true
+      // Grup 1: stoğu olan, Grup 2: tükenmiş+faturalı, Grup 3: tükenmiş+faturasız
+      const groupA = bitmiA ? (faturaliA ? 2 : 3) : 1
+      const groupB = bitmiB ? (faturaliB ? 2 : 3) : 1
+      if (groupA !== groupB) return groupA - groupB
       return a.ad.localeCompare(b.ad, "tr")
     })
 
@@ -221,11 +226,17 @@ export function Stok() {
                 const kritikMi = m.stok <= m.min_miktar && m.min_miktar > 0
                 const bitmisMi = m.stok <= 0
                 const gi = m.son_giris_islem
+                const faturali = gi?.faturali === true
                 const kullanim = cikisMap.get(m.id) ?? []
                 const isExpanded = expanded.has(m.id)
 
+                const rowBg = faturali
+                  ? bitmisMi ? "bg-green-50/50 dark:bg-green-950/20" : "bg-green-50 dark:bg-green-950/40"
+                  : ""
+                const rowOpacity = !faturali && bitmisMi ? "opacity-40" : ""
+
                 return (
-                  <div key={m.id} className={bitmisMi ? "opacity-40" : ""}>
+                  <div key={m.id} className={`${rowBg} ${rowOpacity}`}>
                     {/* Ana satır */}
                     <div className="flex items-center justify-between py-3 gap-2">
                       {/* Genişlet butonu */}
