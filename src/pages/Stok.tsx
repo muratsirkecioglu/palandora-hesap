@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info } from "lucide-react"
+import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info, ChevronDown, ChevronRight } from "lucide-react"
 import { supabase, type Malzeme, type MalzemeWithStok } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,14 @@ interface EditForm {
   aciklama: string
 }
 
+type CikisRow = {
+  tarih: string
+  miktar: number
+  birim_fiyat: number
+  aciklama: string
+  kategori: string
+}
+
 type StokRow = {
   islem_id: string
   malzeme_id: string
@@ -34,13 +42,17 @@ type StokRow = {
     nakliye_faturali: boolean
     tarih: string
     faturali: boolean
+    aciklama: string
+    kategori: string
   } | null
 }
 
 export function Stok() {
   const { isAdmin, user } = useAuth()
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
+  const [cikisMap, setCikisMap] = useState<Map<string, CikisRow[]>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<MalzemeWithStok | null>(null)
   const [form, setForm] = useState<EditForm>({
@@ -55,20 +67,31 @@ export function Stok() {
     const [{ data: malzemeData }, { data: stokData }] = await Promise.all([
       supabase.from("malzemeler").select("*").order("ad"),
       supabase.from("islem_stok")
-        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali)")
+        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
         .order("created_at", { ascending: false }),
     ])
 
     const rows = (stokData ?? []) as unknown as StokRow[]
 
     const stokMap = new Map<string, { giris: number; cikis: number; sonGiris: StokRow | null }>()
+    const cikislar = new Map<string, CikisRow[]>()
+
     for (const s of rows) {
       const e = stokMap.get(s.malzeme_id) ?? { giris: 0, cikis: 0, sonGiris: null }
       if (s.tur === "giris") {
         e.giris += s.miktar
-        if (!e.sonGiris) e.sonGiris = s  // desc sıralı: ilk = en son
+        if (!e.sonGiris) e.sonGiris = s
       } else {
         e.cikis += s.miktar
+        const list = cikislar.get(s.malzeme_id) ?? []
+        list.push({
+          tarih: s.islem?.tarih ?? "",
+          miktar: s.miktar,
+          birim_fiyat: s.birim_fiyat,
+          aciklama: s.islem?.aciklama ?? "",
+          kategori: s.islem?.kategori ?? "",
+        })
+        cikislar.set(s.malzeme_id, list)
       }
       stokMap.set(s.malzeme_id, e)
     }
@@ -84,10 +107,19 @@ export function Stok() {
     })
 
     setMalzemeler(malzemelerWithStok)
+    setCikisMap(cikislar)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
+
+  function toggleExpanded(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
 
   function f(field: keyof EditForm, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -95,13 +127,7 @@ export function Stok() {
 
   function openEdit(m: MalzemeWithStok) {
     setEditing(m)
-    setForm({
-      ad: m.ad,
-      kategori: m.kategori,
-      birim: m.birim,
-      min_miktar: String(m.min_miktar),
-      aciklama: m.aciklama ?? "",
-    })
+    setForm({ ad: m.ad, kategori: m.kategori, birim: m.birim, min_miktar: String(m.min_miktar), aciklama: m.aciklama ?? "" })
     setDialogOpen(true)
   }
 
@@ -109,9 +135,7 @@ export function Stok() {
     if (!editing || !form.ad) return
     setSaving(true)
     await supabase.from("malzemeler").update({
-      ad: form.ad,
-      kategori: form.kategori,
-      birim: form.birim,
+      ad: form.ad, kategori: form.kategori, birim: form.birim,
       min_miktar: parseFloat(form.min_miktar) || 0,
       aciklama: form.aciklama,
       updated_at: new Date().toISOString(),
@@ -153,9 +177,7 @@ export function Stok() {
 
       <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
-        <p>
-          Yeni malzeme eklemek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.
-        </p>
+        <p>Yeni malzeme eklemek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -197,54 +219,98 @@ export function Stok() {
                 const kritikMi = m.stok <= m.min_miktar && m.min_miktar > 0
                 const bitmisMi = m.stok <= 0
                 const gi = m.son_giris_islem
+                const kullanim = cikisMap.get(m.id) ?? []
+                const isExpanded = expanded.has(m.id)
+
                 return (
-                  <div key={m.id} className={`flex items-center justify-between py-3 gap-4 ${bitmisMi ? "opacity-40" : ""}`}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-sm">{m.ad}</p>
-                        {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
-                        <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
-                        {gi && (
-                          gi.faturali
-                            ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" aria-label="Faturalı" />
-                            : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" aria-label="Faturasız" />
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Min: {m.min_miktar} {m.birim}
-                        {gi?.tarih && ` · ${formatDate(gi.tarih)}`}
-                        {gi?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(gi.nakliye_tutari)}`}
-                        {gi?.nakliye_tutari != null && (
-                          gi.nakliye_faturali
-                            ? <FileCheck className="inline h-3 w-3 ml-1 text-green-600" />
-                            : <FileX className="inline h-3 w-3 ml-1 text-orange-400" />
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <p className={`font-semibold text-sm ${kritikMi ? "text-orange-500" : ""}`}>
-                          {m.stok} {m.birim}
-                        </p>
-                        {m.son_birim_fiyat != null && (
-                          <p className="text-xs text-muted-foreground">
-                            {formatCurrency(m.son_birim_fiyat)}/{m.birim}
-                          </p>
-                        )}
-                      </div>
-                      {(isAdmin || m.kullanici_id === user?.id) && (
-                        <>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(m)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          {isAdmin && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(m.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                  <div key={m.id} className={bitmisMi ? "opacity-40" : ""}>
+                    {/* Ana satır */}
+                    <div className="flex items-center justify-between py-3 gap-2">
+                      {/* Genişlet butonu */}
+                      <button
+                        onClick={() => kullanim.length > 0 && toggleExpanded(m.id)}
+                        className={`shrink-0 text-muted-foreground transition-colors ${kullanim.length > 0 ? "hover:text-foreground cursor-pointer" : "opacity-0 cursor-default"}`}
+                      >
+                        {isExpanded
+                          ? <ChevronDown className="h-4 w-4" />
+                          : <ChevronRight className="h-4 w-4" />}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-sm">{m.ad}</p>
+                          {kritikMi && <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
+                          <Badge variant="outline" className="text-xs shrink-0">{m.kategori}</Badge>
+                          {gi && (gi.faturali
+                            ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                            : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" />)}
+                          {kullanim.length > 0 && (
+                            <span className="text-xs text-muted-foreground">{kullanim.length} kullanım</span>
                           )}
-                        </>
-                      )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Min: {m.min_miktar} {m.birim}
+                          {gi?.tarih && ` · ${formatDate(gi.tarih)}`}
+                          {gi?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(gi.nakliye_tutari)}`}
+                          {gi?.nakliye_tutari != null && (gi.nakliye_faturali
+                            ? <FileCheck className="inline h-3 w-3 ml-1 text-green-600" />
+                            : <FileX className="inline h-3 w-3 ml-1 text-orange-400" />)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className={`font-semibold text-sm ${kritikMi ? "text-orange-500" : ""}`}>
+                            {m.stok} {m.birim}
+                          </p>
+                          {m.son_birim_fiyat != null && (
+                            <p className="text-xs text-muted-foreground">{formatCurrency(m.son_birim_fiyat)}/{m.birim}</p>
+                          )}
+                        </div>
+                        {(isAdmin || m.kullanici_id === user?.id) && (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(m)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            {isAdmin && (
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(m.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Kullanım listesi */}
+                    {isExpanded && kullanim.length > 0 && (
+                      <div className="ml-6 mb-3 rounded-md border border-border bg-muted/30 overflow-hidden">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-border text-muted-foreground">
+                              <th className="text-left font-medium px-3 py-1.5">Tarih</th>
+                              <th className="text-left font-medium px-3 py-1.5">İşlem</th>
+                              <th className="text-left font-medium px-3 py-1.5 hidden sm:table-cell">Kategori</th>
+                              <th className="text-right font-medium px-3 py-1.5">Miktar</th>
+                              <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Birim Fiyat</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {kullanim.map((k, i) => (
+                              <tr key={i} className="hover:bg-muted/50">
+                                <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">{formatDate(k.tarih)}</td>
+                                <td className="px-3 py-1.5">{k.aciklama || "—"}</td>
+                                <td className="px-3 py-1.5 hidden sm:table-cell text-muted-foreground">{k.kategori || "—"}</td>
+                                <td className="px-3 py-1.5 text-right font-medium text-red-500">-{k.miktar} {m.birim}</td>
+                                <td className="px-3 py-1.5 text-right hidden sm:table-cell text-muted-foreground">
+                                  {k.birim_fiyat > 0 ? formatCurrency(k.birim_fiyat) : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -255,9 +321,7 @@ export function Stok() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Malzemeyi Düzenle</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Malzemeyi Düzenle</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Malzeme Adı</Label>
