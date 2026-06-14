@@ -68,7 +68,6 @@ export function Finans() {
   async function load() {
     setLoading(true)
     const islemQ = supabase.from("islemler").select("*").order("tarih", { ascending: false })
-    if (!isAdmin) islemQ.eq("kullanici_id", user!.id)
 
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
       islemQ,
