@@ -28,6 +28,7 @@ type CikisRow = {
   birim_fiyat: number
   aciklama: string
   kategori: string
+  faturali: boolean
 }
 
 type StokRow = {
@@ -90,6 +91,7 @@ export function Stok() {
           birim_fiyat: s.birim_fiyat,
           aciklama: s.islem?.aciklama ?? "",
           kategori: s.islem?.kategori ?? "",
+          faturali: s.islem?.faturali ?? false,
         })
         cikislar.set(s.malzeme_id, list)
       }
@@ -248,7 +250,8 @@ export function Stok() {
                             <span className="text-xs text-muted-foreground">{kullanim.length} kullanım</span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        {m.aciklama && <p className="text-xs text-muted-foreground mt-0.5 italic">{m.aciklama}</p>}
+                      <p className="text-xs text-muted-foreground mt-0.5">
                           Min: {m.min_miktar} {m.birim}
                           {gi?.tarih && ` · ${formatDate(gi.tarih)}`}
                           {gi?.nakliye_tutari != null && ` · Nakliye: ${formatCurrency(gi.nakliye_tutari)}`}
@@ -293,6 +296,7 @@ export function Stok() {
                               <th className="text-left font-medium px-3 py-1.5 hidden sm:table-cell">Kategori</th>
                               <th className="text-right font-medium px-3 py-1.5">Miktar</th>
                               <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Birim Fiyat</th>
+                              <th className="text-center font-medium px-3 py-1.5">Fatura</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border">
@@ -304,6 +308,11 @@ export function Stok() {
                                 <td className="px-3 py-1.5 text-right font-medium text-red-500">-{k.miktar} {m.birim}</td>
                                 <td className="px-3 py-1.5 text-right hidden sm:table-cell text-muted-foreground">
                                   {k.birim_fiyat > 0 ? formatCurrency(k.birim_fiyat) : "—"}
+                                </td>
+                                <td className="px-3 py-1.5 text-center">
+                                  {k.faturali
+                                    ? <FileCheck className="h-3.5 w-3.5 text-green-600 inline" />
+                                    : <FileX className="h-3.5 w-3.5 text-orange-400 inline" />}
                                 </td>
                               </tr>
                             ))}
