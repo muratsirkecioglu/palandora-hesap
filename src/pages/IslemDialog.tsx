@@ -111,10 +111,11 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   const hesapBirimFiyat = useMemo(() => {
     const tutar = parseFloat(form.tutar) || 0
+    const nakliye = parseFloat(form.nakliye_tutari) || 0
     const miktar = parseFloat(malzemeAlt.miktar) || 0
     if (miktar <= 0 || tutar <= 0) return null
-    return tutar / miktar
-  }, [form.tutar, malzemeAlt.miktar])
+    return (tutar + nakliye) / miktar
+  }, [form.tutar, form.nakliye_tutari, malzemeAlt.miktar])
 
   useEffect(() => {
     if (kullanicilar.length === 0) {
@@ -410,7 +411,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     // ── Malzeme gider: malzeme kaydı + giris stok hareketi ───────────────
     if (isMalzemeGider) {
       const miktar = parseFloat(malzemeAlt.miktar) || 0
-      const birimFiyat = miktar > 0 ? toplam / miktar : 0
+      const nakliye = parseFloat(form.nakliye_tutari) || 0
+      const birimFiyat = miktar > 0 ? (toplam + nakliye) / miktar : 0
       const malzemePayload = {
         ad: malzemeAlt.ad,
         kategori: malzemeAlt.mal_kategori,
