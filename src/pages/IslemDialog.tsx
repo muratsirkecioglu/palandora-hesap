@@ -105,6 +105,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [demirbasAlt, setDemirbasAlt] = useState<DemirbasAlt>(defaultDemirbasAlt)
   const [linkedDemirbasId, setLinkedDemirbasId] = useState<string | null>(null)
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
+  const [bagliGiderler, setBagliGiderler] = useState<Islem[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -149,6 +150,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setLinkedDemirbasId(null)
     setDemirbasAlt(defaultDemirbasAlt)
     setOdemeSatirlar([])
+    setBagliGiderler([])
 
     if (editing) {
       setForm({
@@ -214,6 +216,14 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             setStokSatirlar([])
           }
         })
+        // Gelir ise bağlı giderleri yükle
+        if (editing.tur === "gelir") {
+          supabase.from("islemler")
+            .select("*")
+            .eq("bagli_gelir_islem_id", editing.id)
+            .order("tarih")
+            .then(({ data }) => setBagliGiderler((data ?? []) as Islem[]))
+        }
       }
     } else if (initialValues) {
       setForm({
@@ -863,6 +873,47 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Gelir: bağlı giderler (okunabilir) ─────────────────────── */}
+          {form.tur === "gelir" && bagliGiderler.length > 0 && (
+            <div className="space-y-2">
+              <div className="relative flex items-center gap-2 py-1">
+                <div className="flex-1 border-t border-border" />
+                <span className="text-xs text-muted-foreground shrink-0">Bağlı Giderler</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+              <div className="rounded-md border border-border bg-muted/30 divide-y divide-border text-xs">
+                {bagliGiderler.map(g => (
+                  <div key={g.id} className="flex items-center justify-between px-3 py-2">
+                    <div>
+                      <p className="font-medium">{g.aciklama}</p>
+                      <p className="text-muted-foreground">{formatDate(g.tarih)} · {g.kategori}</p>
+                    </div>
+                    <span className="text-red-500 font-medium shrink-0 ml-2">
+                      -{formatCurrency(g.tutar + (g.nakliye_tutari ?? 0))}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between px-3 py-2 font-semibold bg-muted/50">
+                  <span className="text-muted-foreground">Toplam Gider</span>
+                  <span className="text-red-500">
+                    -{formatCurrency(bagliGiderler.reduce((s, g) => s + g.tutar + (g.nakliye_tutari ?? 0), 0))}
+                  </span>
+                </div>
+              </div>
+              {(() => {
+                const tutar = parseFloat(form.tutar) || 0
+                const giderToplam = bagliGiderler.reduce((s, g) => s + g.tutar + (g.nakliye_tutari ?? 0), 0)
+                const net = tutar - giderToplam
+                return (
+                  <div className={`flex items-center justify-between rounded-md px-3 py-2 text-sm font-semibold ${net >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                    <span>Net Kâr</span>
+                    <span>{net >= 0 ? "+" : ""}{formatCurrency(net)}</span>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
