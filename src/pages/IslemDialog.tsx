@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 
 const KATEGORILER = ["Satış", "Hizmet", "Kira", "Maaş", "Malzeme", "Demirbaş", "Fatura", "Vergi", "Noter", "Harç", "Muhasebe", "Gıda", "Sigorta", "Akaryakıt", "Diğer"]
 const MALZEME_KATEGORILER = ["Hammadde", "Yarı Mamul", "Mamul", "Sarf Malzeme", "Ekipman", "Diğer"]
@@ -75,6 +75,7 @@ interface Props {
   initialValues?: Islem
   malzemeler: MalzemeWithStok[]
   hesaplar: Hesap[]
+  gelirIslemleri: Islem[]
   onSaved: () => void
 }
 
@@ -90,9 +91,10 @@ const defaultForm = {
   nakliye_tutari: "",
   nakliye_faturali: false,
   faturali: false,
+  bagli_gelir_islem_id: "",
 }
 
-export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, onSaved }: Props) {
+export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, gelirIslemleri, onSaved }: Props) {
   const { user } = useAuth()
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
@@ -108,6 +110,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
   const isMalzemeGider = form.tur === "gider" && form.kategori === "Malzeme"
   const isDemirbasGider = form.tur === "gider" && form.kategori === "Demirbaş"
+  const isHizmetGider = form.tur === "gider" && form.kategori === "Hizmet"
 
   const hesapBirimFiyat = useMemo(() => {
     const tutar = parseFloat(form.tutar) || 0
@@ -160,6 +163,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         nakliye_tutari: editing.nakliye_tutari != null ? String(editing.nakliye_tutari) : "",
         nakliye_faturali: editing.nakliye_faturali ?? false,
         faturali: editing.faturali ?? false,
+        bagli_gelir_islem_id: editing.bagli_gelir_islem_id ?? "",
       })
 
       // Mevcut ödemeleri yükle
@@ -224,6 +228,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         nakliye_tutari: initialValues.nakliye_tutari != null ? String(initialValues.nakliye_tutari) : "",
         nakliye_faturali: initialValues.nakliye_faturali ?? false,
         faturali: initialValues.faturali ?? false,
+        bagli_gelir_islem_id: "",
       })
       // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
@@ -346,6 +351,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
       nakliye_faturali: form.nakliye_faturali,
       faturali: form.faturali,
+      bagli_gelir_islem_id: (isHizmetGider && form.bagli_gelir_islem_id) ? form.bagli_gelir_islem_id : null,
       kullanici_id: user!.id,
     }
 
@@ -772,6 +778,33 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               <div className="flex-1 border-t border-border" />
             </div>
           </>)}
+
+          {/* ── Hizmet Gider: gelir işlemi ilişkilendirme ───────────────── */}
+          {isHizmetGider && (
+            <div className="space-y-1.5">
+              <div className="relative flex items-center gap-2 py-1">
+                <div className="flex-1 border-t border-border" />
+                <span className="text-xs text-muted-foreground shrink-0">İlişkilendirme</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+              <Label>İlgili Gelir İşlemi — isteğe bağlı</Label>
+              <Select
+                value={form.bagli_gelir_islem_id || "__none__"}
+                onValueChange={v => setF("bagli_gelir_islem_id", v === "__none__" ? "" : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Bağlantı Yok —</SelectItem>
+                  {gelirIslemleri.map(g => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.aciklama} · {formatDate(g.tarih)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Bu hizmet gideri seçilen gelir işleminin net kâr hesabına dahil edilir.</p>
+            </div>
+          )}
 
           {/* ── Gelir: stoktan çıkış ────────────────────────────────────── */}
           {form.tur === "gelir" && (

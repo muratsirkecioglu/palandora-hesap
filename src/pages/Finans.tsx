@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle, Wrench } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithStok, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
@@ -182,6 +182,19 @@ export function Finans() {
 
   function islemToplam(i: Islem) { return i.tutar + (i.nakliye_tutari ?? 0) }
 
+  const hizmetGiderMap = (() => {
+    const map = new Map<string, { toplam: number; items: Islem[] }>()
+    for (const i of islemler) {
+      if (i.tur === "gider" && i.bagli_gelir_islem_id) {
+        const e = map.get(i.bagli_gelir_islem_id) ?? { toplam: 0, items: [] }
+        e.toplam += islemToplam(i)
+        e.items.push(i)
+        map.set(i.bagli_gelir_islem_id, e)
+      }
+    }
+    return map
+  })()
+
   const gelirler = donemFiltrele(gelirlerTumu).filter(i =>
     (filterOdeme === "tumu" || odemeDurumu(islemToplam(i), odenenMap.get(i.id) ?? 0) === filterOdeme) &&
     (filterGelirKat === "tumu" || i.kategori === filterGelirKat)
@@ -209,7 +222,10 @@ export function Finans() {
     const eksikHesap = eksikHesapSet.has(islem.id)
     const canEdit = isAdmin || islem.kullanici_id === user?.id
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
-    const netKar = malzemeMaliyeti > 0 ? islem.tutar - malzemeMaliyeti : null
+    const hizmetGider = islem.tur === "gelir" ? hizmetGiderMap.get(islem.id) : undefined
+    const hizmetToplam = hizmetGider?.toplam ?? 0
+    const netKar = (malzemeMaliyeti > 0 || hizmetToplam > 0) ? islem.tutar - malzemeMaliyeti - hizmetToplam : null
+    const bagliGelir = islem.bagli_gelir_islem_id ? islemler.find(i => i.id === islem.bagli_gelir_islem_id) : null
     return (
       <div className="py-3 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -256,11 +272,24 @@ export function Finans() {
             </p>
           )}
           {netKar !== null && (
-            <p className="text-xs mt-0.5">
-              <span className="text-muted-foreground">Maliyet: {formatCurrency(malzemeMaliyeti)}</span>
-              <span className={`ml-2 font-medium ${netKar >= 0 ? "text-green-600" : "text-red-500"}`}>
+            <p className="text-xs mt-0.5 flex flex-wrap gap-x-2">
+              {malzemeMaliyeti > 0 && <span className="text-muted-foreground">Malzeme: {formatCurrency(malzemeMaliyeti)}</span>}
+              {hizmetToplam > 0 && <span className="text-muted-foreground">Hizmet: {formatCurrency(hizmetToplam)}</span>}
+              <span className={`font-medium ${netKar >= 0 ? "text-green-600" : "text-red-500"}`}>
                 Net Kâr: {netKar >= 0 ? "+" : ""}{formatCurrency(netKar)}
               </span>
+            </p>
+          )}
+          {hizmetGider && hizmetGider.items.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <Wrench className="inline h-3 w-3 mr-1" />
+              {hizmetGider.items.map(h => h.aciklama).join(", ")}
+            </p>
+          )}
+          {bagliGelir && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <Wrench className="inline h-3 w-3 mr-1" />
+              → {bagliGelir.aciklama}
             </p>
           )}
           {islem.adam_saat != null && (
@@ -510,6 +539,7 @@ export function Finans() {
         initialValues={copying ?? undefined}
         malzemeler={malzemeler}
         hesaplar={hesaplar}
+        gelirIslemleri={gelirlerTumu}
         onSaved={load}
       />
     </div>
