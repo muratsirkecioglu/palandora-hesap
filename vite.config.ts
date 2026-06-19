@@ -18,7 +18,7 @@ export default defineConfig({
         display: 'standalone',
         scope: '/palandora-hesap/',
         start_url: '/palandora-hesap/#/',
-        orientation: 'portrait',
+        orientation: 'any',
         lang: 'tr',
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
