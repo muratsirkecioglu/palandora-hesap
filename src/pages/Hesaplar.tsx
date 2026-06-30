@@ -32,6 +32,8 @@ interface HesapRow extends Hesap {
   gelir: number
   gider: number
   bakiye: number
+  cariBorcVerilen: number
+  cariIadeEdilen: number
 }
 
 interface Hareket {
@@ -43,9 +45,16 @@ interface Hareket {
   bakiye: number
 }
 
+const SAHIP_LABEL: Record<string, string> = {
+  sirket: "Şirket",
+  ortak: "Ortak",
+  calisan: "Çalışan",
+}
+
 const defaultForm = {
   ad: "",
   tur: "banka" as Hesap["tur"],
+  sahip_tipi: "sirket" as Hesap["sahip_tipi"],
   para_birimi: "TRY",
   bakiye_baslangic: "",
   notlar: "",
@@ -70,18 +79,21 @@ export function Hesaplar() {
     const [{ data: hesapData }, { data: odemeData }] = await Promise.all([
       supabase.from("hesaplar").select("*").order("ad"),
       supabase.from("odemeler")
-        .select("hesap_id, tutar, islem:islemler!islem_id(tur)")
+        .select("hesap_id, tutar, islem:islemler!islem_id(tur, kategori)")
         .not("hesap_id", "is", null),
     ])
 
-    type OdemeRow = { hesap_id: string; tutar: number; islem: { tur: string } | null }
+    type OdemeRow = { hesap_id: string; tutar: number; islem: { tur: string; kategori: string } | null }
     const odemeler = (odemeData ?? []) as unknown as OdemeRow[]
 
     const rows: HesapRow[] = (hesapData ?? []).map((h: Hesap) => {
       const linked = odemeler.filter(o => o.hesap_id === h.id && o.islem)
       const gelir = linked.filter(o => o.islem!.tur === "gelir").reduce((s, o) => s + o.tutar, 0)
       const gider = linked.filter(o => o.islem!.tur === "gider").reduce((s, o) => s + o.tutar, 0)
-      return { ...h, gelir, gider, bakiye: h.bakiye_baslangic + gelir - gider }
+      const cari = linked.filter(o => o.islem!.kategori === "Cari Hesap")
+      const cariBorcVerilen = cari.filter(o => o.islem!.tur === "gider").reduce((s, o) => s + o.tutar, 0)
+      const cariIadeEdilen = cari.filter(o => o.islem!.tur === "gelir").reduce((s, o) => s + o.tutar, 0)
+      return { ...h, gelir, gider, bakiye: h.bakiye_baslangic + gelir - gider, cariBorcVerilen, cariIadeEdilen }
     })
 
     setHesaplar(rows)
@@ -129,6 +141,7 @@ export function Hesaplar() {
     setForm({
       ad: h.ad,
       tur: h.tur,
+      sahip_tipi: h.sahip_tipi,
       para_birimi: h.para_birimi,
       bakiye_baslangic: String(h.bakiye_baslangic),
       notlar: h.notlar ?? "",
@@ -143,6 +156,7 @@ export function Hesaplar() {
     const payload = {
       ad: form.ad,
       tur: form.tur,
+      sahip_tipi: form.sahip_tipi,
       para_birimi: form.para_birimi,
       bakiye_baslangic: parseFloat(form.bakiye_baslangic) || 0,
       notlar: form.notlar || null,
@@ -231,7 +245,12 @@ export function Hesaplar() {
                         <p className="text-xs text-muted-foreground">{TUR_LABEL[h.tur]} · {h.para_birimi}</p>
                       </div>
                     </div>
-                    {!h.aktif && <Badge variant="outline" className="text-xs">Pasif</Badge>}
+                    <div className="flex items-center gap-1">
+                      {h.sahip_tipi !== "sirket" && (
+                        <Badge variant="outline" className="text-xs">{SAHIP_LABEL[h.sahip_tipi]}</Badge>
+                      )}
+                      {!h.aktif && <Badge variant="outline" className="text-xs">Pasif</Badge>}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 space-y-3">
@@ -255,6 +274,27 @@ export function Hesaplar() {
                       <p className="font-medium text-red-500">-{formatCurrency(h.gider)}</p>
                     </div>
                   </div>
+                  {h.sahip_tipi !== "sirket" && (h.cariBorcVerilen > 0 || h.cariIadeEdilen > 0) && (() => {
+                    const net = h.cariBorcVerilen - h.cariIadeEdilen
+                    return (
+                      <div className="rounded-lg border border-border p-3 space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground">Cari Hesap</p>
+                        <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                          <div>
+                            <p className="text-muted-foreground">Borç Verilen</p>
+                            <p className="font-medium">{formatCurrency(h.cariBorcVerilen)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">İade Edilen</p>
+                            <p className="font-medium">{formatCurrency(h.cariIadeEdilen)}</p>
+                          </div>
+                        </div>
+                        <div className={`text-center text-xs font-semibold rounded-md py-1 ${net > 0.005 ? "bg-orange-50 text-orange-600" : net < -0.005 ? "bg-blue-50 text-blue-600" : "bg-muted text-muted-foreground"}`}>
+                          {net > 0.005 ? `Şirket Borçlu: ${formatCurrency(net)}` : net < -0.005 ? `${SAHIP_LABEL[h.sahip_tipi]} Borçlu: ${formatCurrency(-net)}` : "Hesap Kapalı"}
+                        </div>
+                      </div>
+                    )
+                  })()}
                   {h.notlar && <p className="text-xs text-muted-foreground italic">{h.notlar}</p>}
                   {isAdmin && (
                     <div className="flex justify-end gap-1 pt-1 border-t border-border" onClick={e => e.stopPropagation()}>
@@ -316,7 +356,12 @@ export function Hesaplar() {
                             {formatDate(h.tarih)}
                           </td>
                           <td className="px-3 py-2">
-                            <p className="font-medium">{h.islem?.aciklama ?? "—"}</p>
+                            <p className="font-medium flex items-center gap-1.5">
+                              {h.islem?.aciklama ?? "—"}
+                              {h.islem?.kategori === "Cari Hesap" && (
+                                <Badge variant="outline" className="text-[10px] py-0">Cari</Badge>
+                              )}
+                            </p>
                             {h.aciklama && <p className="text-muted-foreground">{h.aciklama}</p>}
                           </td>
                           <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">
@@ -383,6 +428,18 @@ export function Hesaplar() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Hesap Sahibi</Label>
+              <Select value={form.sahip_tipi} onValueChange={v => f("sahip_tipi", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sirket">Şirket</SelectItem>
+                  <SelectItem value="ortak">Ortak</SelectItem>
+                  <SelectItem value="calisan">Çalışan</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Şirket hesabı ile Ortak/Çalışan hesabı arasındaki transferler otomatik "Cari Hesap" olarak izlenir.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Başlangıç Bakiyesi (₺)</Label>

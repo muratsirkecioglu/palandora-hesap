@@ -27,6 +27,7 @@ export interface Hesap {
   id: string
   ad: string
   tur: "banka" | "kasa" | "kredi_karti" | "kisi" | "diger"
+  sahip_tipi: "sirket" | "ortak" | "calisan"
   para_birimi: string
   bakiye_baslangic: number
   aktif: boolean

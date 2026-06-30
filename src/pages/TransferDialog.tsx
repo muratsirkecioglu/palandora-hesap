@@ -59,9 +59,27 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
     setError(null)
 
     const eslesmeId = crypto.randomUUID()
-    const aciklama = form.aciklama || "Hesaplar arası transfer"
     const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
     const hedef = hesaplar.find(h => h.id === form.hedef_hesap_id)
+
+    // Şirket hesabı ile Ortak/Çalışan hesabı arasındaki transferler "Cari Hesap" olarak işaretlenir
+    const kaynakSahip = kaynak?.sahip_tipi ?? "sirket"
+    const hedefSahip = hedef?.sahip_tipi ?? "sirket"
+    const isCari =
+      (kaynakSahip !== "sirket" && hedefSahip === "sirket") ||
+      (kaynakSahip === "sirket" && hedefSahip !== "sirket")
+    const kategori = isCari ? "Cari Hesap" : "Transfer"
+
+    let aciklama = form.aciklama
+    if (isCari) {
+      const kisiSahip = kaynakSahip !== "sirket" ? kaynakSahip : hedefSahip
+      const etiket = kisiSahip === "ortak" ? "Ortak" : "Çalışan"
+      // kaynak kişiyse → kişiden şirkete para geçiyor → borç alma; aksi halde borç iadesi
+      aciklama = kaynakSahip !== "sirket" ? `${etiket}lardan Borç` : `${etiket}lara Borç İade`
+      if (form.aciklama) aciklama += ` — ${form.aciklama}`
+    } else if (!aciklama) {
+      aciklama = "Hesaplar arası transfer"
+    }
 
     const { data: inserted, error: err } = await supabase.from("islemler").insert([
       {
@@ -69,7 +87,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
         aciklama: `${aciklama} → ${hedef?.ad}`,
         tutar,
         tur: "gider",
-        kategori: "Transfer",
+        kategori,
         hesap_id: form.kaynak_hesap_id,
         transfer_eslesme_id: eslesmeId,
         faturali: false,
@@ -80,7 +98,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
         aciklama: `${aciklama} ← ${kaynak?.ad}`,
         tutar,
         tur: "gelir",
-        kategori: "Transfer",
+        kategori,
         hesap_id: form.hedef_hesap_id,
         transfer_eslesme_id: eslesmeId,
         faturali: false,
@@ -102,6 +120,21 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
   }
 
   const aktifHesaplar = hesaplar.filter(h => h.aktif)
+
+  const cariOnizleme = (() => {
+    const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
+    const hedef = hesaplar.find(h => h.id === form.hedef_hesap_id)
+    if (!kaynak || !hedef) return null
+    const kaynakSahip = kaynak.sahip_tipi ?? "sirket"
+    const hedefSahip = hedef.sahip_tipi ?? "sirket"
+    const isCari =
+      (kaynakSahip !== "sirket" && hedefSahip === "sirket") ||
+      (kaynakSahip === "sirket" && hedefSahip !== "sirket")
+    if (!isCari) return null
+    const kisiSahip = kaynakSahip !== "sirket" ? kaynakSahip : hedefSahip
+    const etiket = kisiSahip === "ortak" ? "Ortak" : "Çalışan"
+    return kaynakSahip !== "sirket" ? `${etiket}lardan Borç` : `${etiket}lara Borç İade`
+  })()
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -148,9 +181,15 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
             </div>
           </div>
 
+          {cariOnizleme && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
+              Bu transfer otomatik olarak <strong>"{cariOnizleme}"</strong> cari hareketi olarak kaydedilecek.
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <Label>Açıklama (isteğe bağlı)</Label>
-            <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder="ör. Maaş ödemesi, kasa çekimi..." />
+            <Label>{cariOnizleme ? "Ek Not (isteğe bağlı)" : "Açıklama (isteğe bağlı)"}</Label>
+            <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder={cariOnizleme ? "ör. Mart ayı avansı..." : "ör. Maaş ödemesi, kasa çekimi..."} />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
