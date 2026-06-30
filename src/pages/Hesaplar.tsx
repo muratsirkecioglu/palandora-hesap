@@ -73,14 +73,19 @@ export function Hesaplar() {
   const [selectedHesapId, setSelectedHesapId] = useState<string | null>(null)
   const [hareketler, setHareketler] = useState<Hareket[]>([])
   const [hareketLoading, setHareketLoading] = useState(false)
+  const [cariDetayMap, setCariDetayMap] = useState<Map<string, Map<string, { ad: string; borcVerilen: number; iadeEdilen: number }>>>(new Map())
 
   async function load() {
     setLoading(true)
-    const [{ data: hesapData }, { data: odemeData }] = await Promise.all([
+    const [{ data: hesapData }, { data: odemeData }, { data: cariIslemData }] = await Promise.all([
       supabase.from("hesaplar").select("*").order("ad"),
       supabase.from("odemeler")
         .select("hesap_id, tutar, islem:islemler!islem_id(tur, kategori)")
         .not("hesap_id", "is", null),
+      supabase.from("islemler")
+        .select("hesap_id, tur, tutar, transfer_eslesme_id")
+        .eq("kategori", "Cari Hesap")
+        .not("transfer_eslesme_id", "is", null),
     ])
 
     type OdemeRow = { hesap_id: string; tutar: number; islem: { tur: string; kategori: string } | null }
@@ -97,6 +102,37 @@ export function Hesaplar() {
     })
 
     setHesaplar(rows)
+
+    // Şirket hesabı bazında, hangi ortak/çalışanla ne kadar cari hareketi var — döküm haritası
+    type CariRow = { hesap_id: string; tur: string; tutar: number; transfer_eslesme_id: string }
+    const cariRows = (cariIslemData ?? []) as CariRow[]
+    const hesapById = new Map((hesapData ?? []).map((h: Hesap) => [h.id, h]))
+    const pairMap = new Map<string, CariRow[]>()
+    for (const r of cariRows) {
+      const list = pairMap.get(r.transfer_eslesme_id) ?? []
+      list.push(r)
+      pairMap.set(r.transfer_eslesme_id, list)
+    }
+    const detay = new Map<string, Map<string, { ad: string; borcVerilen: number; iadeEdilen: number }>>()
+    for (const pair of pairMap.values()) {
+      if (pair.length !== 2) continue
+      const [a, b] = pair
+      const hesapA = hesapById.get(a.hesap_id)
+      const hesapB = hesapById.get(b.hesap_id)
+      if (!hesapA || !hesapB) continue
+      const companyRow = hesapA.sahip_tipi === "sirket" ? a : (hesapB.sahip_tipi === "sirket" ? b : null)
+      const personRow = hesapA.sahip_tipi !== "sirket" ? a : (hesapB.sahip_tipi !== "sirket" ? b : null)
+      if (!companyRow || !personRow || companyRow === personRow) continue
+      const personHesap = hesapById.get(personRow.hesap_id)!
+      if (!detay.has(companyRow.hesap_id)) detay.set(companyRow.hesap_id, new Map())
+      const m = detay.get(companyRow.hesap_id)!
+      const e = m.get(personRow.hesap_id) ?? { ad: personHesap.ad, borcVerilen: 0, iadeEdilen: 0 }
+      if (companyRow.tur === "gelir") e.borcVerilen += companyRow.tutar
+      else e.iadeEdilen += companyRow.tutar
+      m.set(personRow.hesap_id, e)
+    }
+    setCariDetayMap(detay)
+
     setLoading(false)
   }
 
@@ -295,6 +331,24 @@ export function Hesaplar() {
                       </div>
                     )
                   })()}
+                  {h.sahip_tipi === "sirket" && cariDetayMap.get(h.id) && cariDetayMap.get(h.id)!.size > 0 && (
+                    <div className="rounded-lg border border-border p-3 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Ortak/Çalışan Cari Dökümü</p>
+                      <div className="space-y-1.5">
+                        {Array.from(cariDetayMap.get(h.id)!.entries()).map(([personId, e]) => {
+                          const net = e.borcVerilen - e.iadeEdilen
+                          return (
+                            <div key={personId} className="flex items-center justify-between text-xs gap-2">
+                              <span className="text-muted-foreground truncate">{e.ad}</span>
+                              <span className={`font-medium shrink-0 ${net > 0.005 ? "text-orange-600" : net < -0.005 ? "text-blue-600" : "text-muted-foreground"}`}>
+                                {net > 0.005 ? `Borçluyuz: ${formatCurrency(net)}` : net < -0.005 ? `Alacaklıyız: ${formatCurrency(-net)}` : "Kapalı"}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                   {h.notlar && <p className="text-xs text-muted-foreground italic">{h.notlar}</p>}
                   {isAdmin && (
                     <div className="flex justify-end gap-1 pt-1 border-t border-border" onClick={e => e.stopPropagation()}>
