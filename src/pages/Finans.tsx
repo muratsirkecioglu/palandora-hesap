@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle, Wrench } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithStok, type Hesap } from "@/lib/supabase"
-import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,7 +46,6 @@ function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" |
 }
 
 export function Finans() {
-  const { isAdmin, user } = useAuth()
   const [islemler, setIslemler] = useState<Islem[]>([])
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
@@ -220,7 +218,6 @@ export function Finans() {
     const durum = odemeDurumu(toplam, odenen)
     const hasStok = stokIslemIds.has(islem.id)
     const eksikHesap = eksikHesapSet.has(islem.id)
-    const canEdit = isAdmin || islem.kullanici_id === user?.id
     const malzemeMaliyeti = islem.tur === "gelir" ? (stokMaliyetMap.get(islem.id) ?? 0) : 0
     const hizmetGider = islem.tur === "gelir" ? hizmetGiderMap.get(islem.id) : undefined
     const hizmetToplam = hizmetGider?.toplam ?? 0
@@ -304,19 +301,15 @@ export function Finans() {
               {islem.tur === "gelir" ? "+" : "-"}{formatCurrency(toplam)}
             </p>
           </div>
-          {canEdit && (
-            <>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Kopyala" onClick={() => openCopy(islem)}>
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(islem)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(islem.id)}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          )}
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Kopyala" onClick={() => openCopy(islem)}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(islem)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(islem.id)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
     )
