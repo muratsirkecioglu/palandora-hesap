@@ -21,6 +21,8 @@ const defaultForm = {
   tutar: "",
   tarih: new Date().toISOString().slice(0, 10),
   aciklama: "",
+  // Şirket ↔ ortak/çalışan transferinde kullanıcı tercihi: "cari" | "transfer"
+  tipSecim: "cari",
 }
 
 export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
@@ -62,12 +64,14 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
     const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
     const hedef = hesaplar.find(h => h.id === form.hedef_hesap_id)
 
-    // Şirket hesabı ile Ortak/Çalışan hesabı arasındaki transferler "Cari Hesap" olarak işaretlenir
+    // Şirket hesabı ile Ortak/Çalışan hesabı arasındaki transferler cari olabilir,
+    // ama kullanıcı "Normal Transfer" seçerse (ör. masraf iadesi) cariye dahil edilmez.
     const kaynakSahip = kaynak?.sahip_tipi ?? "sirket"
     const hedefSahip = hedef?.sahip_tipi ?? "sirket"
-    const isCari =
+    const cariMumkun =
       (kaynakSahip !== "sirket" && hedefSahip === "sirket") ||
       (kaynakSahip === "sirket" && hedefSahip !== "sirket")
+    const isCari = cariMumkun && form.tipSecim === "cari"
     const kategori = isCari ? "Cari Hesap" : "Transfer"
 
     let aciklama = form.aciklama
@@ -121,20 +125,25 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
 
   const aktifHesaplar = hesaplar.filter(h => h.aktif)
 
-  const cariOnizleme = (() => {
+  // Seçilen hesaplar şirket ↔ ortak/çalışan ise cari seçeneği sunulur.
+  // cariEtiket: kullanıcı "Cari Hesap" seçerse uygulanacak açıklama.
+  const { cariMumkun, cariEtiket } = (() => {
     const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
     const hedef = hesaplar.find(h => h.id === form.hedef_hesap_id)
-    if (!kaynak || !hedef) return null
+    if (!kaynak || !hedef) return { cariMumkun: false, cariEtiket: "" }
     const kaynakSahip = kaynak.sahip_tipi ?? "sirket"
     const hedefSahip = hedef.sahip_tipi ?? "sirket"
-    const isCari =
+    const mumkun =
       (kaynakSahip !== "sirket" && hedefSahip === "sirket") ||
       (kaynakSahip === "sirket" && hedefSahip !== "sirket")
-    if (!isCari) return null
+    if (!mumkun) return { cariMumkun: false, cariEtiket: "" }
     const kisiSahip = kaynakSahip !== "sirket" ? kaynakSahip : hedefSahip
     const etiket = kisiSahip === "ortak" ? "Ortak" : "Çalışan"
-    return kaynakSahip !== "sirket" ? `${etiket}lardan Borç` : `${etiket}lara Borç İade`
+    const label = kaynakSahip !== "sirket" ? `${etiket}lardan Borç` : `${etiket}lara Borç İade`
+    return { cariMumkun: true, cariEtiket: label }
   })()
+
+  const cariSecili = cariMumkun && form.tipSecim === "cari"
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -181,15 +190,33 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
             </div>
           </div>
 
-          {cariOnizleme && (
+          {cariMumkun && (
+            <div className="space-y-1.5">
+              <Label>İşlem Tipi</Label>
+              <Select value={form.tipSecim} onValueChange={v => f("tipSecim", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cari">Cari Hesap (Borç/İade)</SelectItem>
+                  <SelectItem value="transfer">Normal Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {cariSecili && (
             <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
-              Bu transfer otomatik olarak <strong>"{cariOnizleme}"</strong> cari hareketi olarak kaydedilecek.
+              Bu transfer <strong>"{cariEtiket}"</strong> cari hareketi olarak kaydedilecek ve cari bakiyeye dahil edilecek.
+            </div>
+          )}
+          {cariMumkun && !cariSecili && (
+            <div className="rounded-md bg-muted border px-3 py-2 text-xs text-muted-foreground">
+              Normal transfer — cari (borç) bakiyesine <strong>dahil edilmez</strong>. Ör. çalışanın yaptığı ve şirkete faturalanan masrafın iadesi.
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>{cariOnizleme ? "Ek Not (isteğe bağlı)" : "Açıklama (isteğe bağlı)"}</Label>
-            <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder={cariOnizleme ? "ör. Mart ayı avansı..." : "ör. Maaş ödemesi, kasa çekimi..."} />
+            <Label>{cariSecili ? "Ek Not (isteğe bağlı)" : "Açıklama (isteğe bağlı)"}</Label>
+            <Input value={form.aciklama} onChange={e => f("aciklama", e.target.value)} placeholder={cariSecili ? "ör. Mart ayı avansı..." : "ör. Masraf iadesi, maaş ödemesi..."} />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
