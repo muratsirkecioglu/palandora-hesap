@@ -210,7 +210,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
           )}
           {cariMumkun && !cariSecili && (
             <div className="rounded-md bg-muted border px-3 py-2 text-xs text-muted-foreground">
-              Normal transfer — cari (borç) bakiyesine <strong>dahil edilmez</strong>. Ör. çalışanın yaptığı ve şirkete faturalanan masrafın iadesi.
+              Normal transfer — cari (borç) bakiyesine <strong>dahil edilmez</strong>. Ör. şirkete faturalanan masrafın iadesi ya da borç niteliği taşımayan nakit hareketi.
             </div>
           )}
 
