@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { TrendingUp, TrendingDown, AlertTriangle, Wallet } from "lucide-react"
 import { supabase, type Islem } from "@/lib/supabase"
-import { useAuth } from "@/contexts/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import {
@@ -16,7 +15,6 @@ interface SummaryStats {
 }
 
 export function Dashboard() {
-  const { isAdmin, user } = useAuth()
   const [stats, setStats] = useState<SummaryStats>({ toplamGelir: 0, toplamGider: 0, bakiye: 0, kritikStok: 0 })
   const [sonIslemler, setSonIslemler] = useState<Islem[]>([])
   const [chartData, setChartData] = useState<{ ay: string; gelir: number; gider: number }[]>([])
@@ -25,7 +23,6 @@ export function Dashboard() {
   useEffect(() => {
     async function load() {
       const islemQuery = supabase.from("islemler").select("*").order("tarih", { ascending: false })
-      if (!isAdmin) islemQuery.eq("kullanici_id", user!.id)
 
       const malzemeQuery = supabase.from("malzemeler").select("id, min_miktar")
       const stokQuery = supabase.from("islem_stok").select("malzeme_id, miktar, tur")
@@ -36,11 +33,15 @@ export function Dashboard() {
         stokQuery,
       ])
 
-      const list = (islemler ?? []) as Islem[]
+      const tumIslemler = (islemler ?? []) as Islem[]
       const mList = (malzemeler ?? []) as { id: string; min_miktar: number }[]
 
+      // Finans ile aynı mantık: hesaplar arası transferler gelir/gider sayılmaz;
+      // gidere nakliye tutarı da eklenir.
+      const list = tumIslemler.filter(i => i.transfer_eslesme_id == null)
+      const islemToplam = (i: Islem) => i.tutar + (i.nakliye_tutari ?? 0)
       const toplamGelir = list.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
-      const toplamGider = list.filter(i => i.tur === "gider").reduce((s, i) => s + i.tutar, 0)
+      const toplamGider = list.filter(i => i.tur === "gider").reduce((s, i) => s + islemToplam(i), 0)
 
       // Dinamik stok hesaplama
       const stokMap = new Map<string, number>()
@@ -65,7 +66,7 @@ export function Dashboard() {
         const key = islem.tarih.slice(0, 7)
         if (aylar[key]) {
           if (islem.tur === "gelir") aylar[key].gelir += islem.tutar
-          else aylar[key].gider += islem.tutar
+          else aylar[key].gider += islemToplam(islem)
         }
       })
       const ayNames = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
@@ -77,7 +78,7 @@ export function Dashboard() {
       setLoading(false)
     }
     load()
-  }, [isAdmin, user])
+  }, [])
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Yükleniyor...</div>
 
