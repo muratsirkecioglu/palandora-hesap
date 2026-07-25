@@ -144,7 +144,11 @@ export function Finans() {
     return list.filter(i => i.tarih.slice(0, 7) === filterDonem)
   }
 
-  const mevcutAylar = Array.from(new Set(islemler.map(i => i.tarih.slice(0, 7))))
+  // Hesaplar arası transferler (cari veya normal) gerçek gelir/gider değildir;
+  // Finans'ın listelerinden ve tüm toplamlarından ayıklanır. Hesaplar sayfasında görünürler.
+  const finansIslemler = islemler.filter(i => i.transfer_eslesme_id == null)
+
+  const mevcutAylar = Array.from(new Set(finansIslemler.map(i => i.tarih.slice(0, 7))))
     .sort((a, b) => b.localeCompare(a))
     .map(key => ({
       key,
@@ -153,7 +157,7 @@ export function Finans() {
 
   const ayOzetleri = (() => {
     const map = new Map<string, { gelir: number; gider: number }>()
-    for (const i of islemler) {
+    for (const i of finansIslemler) {
       const key = i.tarih.slice(0, 7)
       if (!map.has(key)) map.set(key, { gelir: 0, gider: 0 })
       const e = map.get(key)!
@@ -172,8 +176,8 @@ export function Finans() {
     return ozetFiltre === "son6ay" ? rows.slice(0, 6) : rows
   })()
 
-  const gelirlerTumu = islemler.filter(i => i.tur === "gelir")
-  const giderlerTumu = islemler.filter(i => i.tur === "gider")
+  const gelirlerTumu = finansIslemler.filter(i => i.tur === "gelir")
+  const giderlerTumu = finansIslemler.filter(i => i.tur === "gider")
 
   const gelirKategoriler = [...new Set(gelirlerTumu.map(i => i.kategori))].sort()
   const giderKategoriler = [...new Set(giderlerTumu.map(i => i.kategori))].sort()
@@ -202,12 +206,12 @@ export function Finans() {
     (filterGiderKat === "tumu" || i.kategori === filterGiderKat)
   )
 
-  const toplamGelir = islemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
-  const toplamGider = islemler.filter(i => i.tur === "gider").reduce((s, i) => s + islemToplam(i), 0)
-  const tahsilEdilecek = islemler
+  const toplamGelir = finansIslemler.filter(i => i.tur === "gelir").reduce((s, i) => s + i.tutar, 0)
+  const toplamGider = finansIslemler.filter(i => i.tur === "gider").reduce((s, i) => s + islemToplam(i), 0)
+  const tahsilEdilecek = finansIslemler
     .filter(i => i.tur === "gelir" && (odenenMap.get(i.id) ?? 0) < islemToplam(i))
     .reduce((s, i) => s + (islemToplam(i) - (odenenMap.get(i.id) ?? 0)), 0)
-  const odenecek = islemler
+  const odenecek = finansIslemler
     .filter(i => i.tur === "gider" && (odenenMap.get(i.id) ?? 0) < islemToplam(i))
     .reduce((s, i) => s + (islemToplam(i) - (odenenMap.get(i.id) ?? 0)), 0)
 
