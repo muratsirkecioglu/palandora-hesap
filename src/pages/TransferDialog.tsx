@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Loader2, ArrowRight } from "lucide-react"
 import { supabase, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
@@ -13,7 +13,16 @@ interface Props {
   onClose: () => void
   hesaplar: Hesap[]
   onSaved: () => void
+  // Dolu ise düzenleme modu: bu transfer_eslesme_id'ye ait transfer yüklenir.
+  editingEslesmeId?: string | null
 }
+
+const CARI_PREFIXLER = [
+  "Ortaklardan Borç",
+  "Ortaklara Borç İade",
+  "Çalışanlardan Borç",
+  "Çalışanlara Borç İade",
+]
 
 const defaultForm = {
   kaynak_hesap_id: "",
@@ -25,11 +34,52 @@ const defaultForm = {
   tipSecim: "cari",
 }
 
-export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
+export function TransferDialog({ open, onClose, hesaplar, onSaved, editingEslesmeId }: Props) {
   const { user } = useAuth()
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Düzenleme modunda mevcut transferin iki bacağını yükleyip formu doldur.
+  useEffect(() => {
+    if (!open) return
+    if (!editingEslesmeId) { setForm(defaultForm); return }
+    let iptal = false
+    ;(async () => {
+      const { data } = await supabase.from("islemler")
+        .select("hesap_id, tur, tutar, tarih, aciklama, kategori")
+        .eq("transfer_eslesme_id", editingEslesmeId)
+      if (iptal) return
+      const legs = (data ?? []) as { hesap_id: string | null; tur: string; tutar: number; tarih: string; aciklama: string; kategori: string }[]
+      const gider = legs.find(l => l.tur === "gider")
+      const gelir = legs.find(l => l.tur === "gelir")
+      if (!gider || !gelir) return
+      const tipSecim = gider.kategori === "Cari Hesap" ? "cari" : "transfer"
+      const hedef = hesaplar.find(h => h.id === gelir.hesap_id)
+      // Açıklamadan kullanıcı notunu ayıkla: "→ hedef" ekini ve cari önekini soy.
+      let base = gider.aciklama
+      if (hedef) base = base.replace(` → ${hedef.ad}`, "")
+      let not = base
+      if (tipSecim === "cari") {
+        not = ""
+        for (const p of CARI_PREFIXLER) {
+          if (base === p) { not = ""; break }
+          if (base.startsWith(p + " — ")) { not = base.slice((p + " — ").length); break }
+        }
+      } else if (base === "Hesaplar arası transfer") {
+        not = ""
+      }
+      setForm({
+        kaynak_hesap_id: gider.hesap_id ?? "",
+        hedef_hesap_id: gelir.hesap_id ?? "",
+        tutar: String(gider.tutar),
+        tarih: gider.tarih,
+        aciklama: not,
+        tipSecim,
+      })
+    })()
+    return () => { iptal = true }
+  }, [open, editingEslesmeId, hesaplar])
 
   function f(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -59,6 +109,16 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
 
     setSaving(true)
     setError(null)
+
+    // Düzenleme modu: eski transferin iki bacağını ve ödemelerini sil, yerine yenisini oluştur.
+    if (editingEslesmeId) {
+      const { data: eskiler } = await supabase.from("islemler").select("id").eq("transfer_eslesme_id", editingEslesmeId)
+      const eskiIds = (eskiler ?? []).map(l => l.id)
+      if (eskiIds.length) {
+        await supabase.from("odemeler").delete().in("islem_id", eskiIds)
+        await supabase.from("islemler").delete().in("id", eskiIds)
+      }
+    }
 
     const eslesmeId = crypto.randomUUID()
     const kaynak = hesaplar.find(h => h.id === form.kaynak_hesap_id)
@@ -149,7 +209,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Hesaplar Arası Transfer</DialogTitle>
+          <DialogTitle>{editingEslesmeId ? "Transferi Düzenle" : "Hesaplar Arası Transfer"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
 
@@ -225,7 +285,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved }: Props) {
             <Button variant="outline" onClick={handleClose}>İptal</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Transfer Yap
+              {editingEslesmeId ? "Güncelle" : "Transfer Yap"}
             </Button>
           </div>
         </div>

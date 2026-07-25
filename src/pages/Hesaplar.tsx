@@ -41,7 +41,7 @@ interface Hareket {
   tarih: string
   tutar: number
   aciklama: string | null
-  islem: { aciklama: string; tur: string; kategori: string } | null
+  islem: { id: string; aciklama: string; tur: string; kategori: string; transfer_eslesme_id: string | null } | null
   bakiye: number
 }
 
@@ -67,6 +67,7 @@ export function Hesaplar() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
+  const [editingTransferId, setEditingTransferId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Hesap | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
@@ -142,10 +143,10 @@ export function Hesaplar() {
     if (!selectedHesapId) { setHareketler([]); return }
     setHareketLoading(true)
 
-    type RawRow = { id: string; tarih: string; tutar: number; aciklama: string | null; islem: { aciklama: string; tur: string; kategori: string } | null }
+    type RawRow = { id: string; tarih: string; tutar: number; aciklama: string | null; islem: { id: string; aciklama: string; tur: string; kategori: string; transfer_eslesme_id: string | null } | null }
 
     supabase.from("odemeler")
-      .select("id, tarih, tutar, aciklama, islem:islemler!islem_id(aciklama, tur, kategori)")
+      .select("id, tarih, tutar, aciklama, islem:islemler!islem_id(id, aciklama, tur, kategori, transfer_eslesme_id)")
       .eq("hesap_id", selectedHesapId)
       .order("tarih", { ascending: true })
       .then(({ data }) => {
@@ -216,6 +217,27 @@ export function Hesaplar() {
     load()
   }
 
+  function openTransferNew() {
+    setEditingTransferId(null)
+    setTransferOpen(true)
+  }
+
+  function openTransferEdit(eslesmeId: string) {
+    setEditingTransferId(eslesmeId)
+    setTransferOpen(true)
+  }
+
+  async function handleTransferDelete(eslesmeId: string) {
+    if (!confirm("Bu transferi silmek istediğinize emin misiniz?\nHer iki hesaptaki bacağı da silinecek.")) return
+    const { data } = await supabase.from("islemler").select("id").eq("transfer_eslesme_id", eslesmeId)
+    const ids = (data ?? []).map(l => l.id)
+    if (ids.length) {
+      await supabase.from("odemeler").delete().in("islem_id", ids)
+      await supabase.from("islemler").delete().in("id", ids)
+    }
+    load()
+  }
+
   const toplamBakiye = hesaplar.filter(h => h.aktif).reduce((s, h) => s + h.bakiye, 0)
   const toplamGelir = hesaplar.reduce((s, h) => s + h.gelir, 0)
   const toplamGider = hesaplar.reduce((s, h) => s + h.gider, 0)
@@ -229,7 +251,7 @@ export function Hesaplar() {
           <p className="text-muted-foreground text-sm">Banka, kasa ve diğer hesaplar</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)} disabled={hesaplar.filter(h => h.aktif).length < 2}>
+          <Button variant="outline" size="sm" onClick={openTransferNew} disabled={hesaplar.filter(h => h.aktif).length < 2}>
             <ArrowLeftRight className="h-4 w-4" /> Transfer
           </Button>
           {isAdmin && (
@@ -399,6 +421,7 @@ export function Hesaplar() {
                       <th className="text-left font-medium px-3 py-2 hidden sm:table-cell">Kategori</th>
                       <th className="text-right font-medium px-3 py-2">Tutar</th>
                       <th className="text-right font-medium px-4 py-2">Bakiye</th>
+                      <th className="px-2 py-2 w-px"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -427,6 +450,18 @@ export function Hesaplar() {
                           <td className={`px-4 py-2 text-right font-medium whitespace-nowrap ${h.bakiye >= 0 ? "text-foreground" : "text-red-500"}`}>
                             {formatCurrency(h.bakiye)}
                           </td>
+                          <td className="px-2 py-2 whitespace-nowrap">
+                            {h.islem?.transfer_eslesme_id ? (
+                              <div className="flex items-center justify-end gap-0.5">
+                                <Button variant="ghost" size="icon" className="h-6 w-6" title="Transferi düzenle" onClick={() => openTransferEdit(h.islem!.transfer_eslesme_id!)}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" title="Transferi sil" onClick={() => handleTransferDelete(h.islem!.transfer_eslesme_id!)}>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : null}
+                          </td>
                         </tr>
                       )
                     })}
@@ -435,7 +470,10 @@ export function Hesaplar() {
                     <tr className="border-t-2 border-border bg-muted/30 font-semibold">
                       <td colSpan={3} className="px-4 py-2 hidden sm:table-cell">Güncel Bakiye</td>
                       <td colSpan={2} className="px-4 py-2 sm:hidden">Güncel Bakiye</td>
-                      <td colSpan={2} className={`px-4 py-2 text-right hidden sm:table-cell ${selectedHesap.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      <td colSpan={3} className={`px-4 py-2 text-right hidden sm:table-cell ${selectedHesap.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
+                        {formatCurrency(selectedHesap.bakiye)}
+                      </td>
+                      <td colSpan={3} className={`px-4 py-2 text-right sm:hidden ${selectedHesap.bakiye >= 0 ? "text-green-600" : "text-red-500"}`}>
                         {formatCurrency(selectedHesap.bakiye)}
                       </td>
                     </tr>
@@ -526,8 +564,9 @@ export function Hesaplar() {
 
       <TransferDialog
         open={transferOpen}
-        onClose={() => setTransferOpen(false)}
+        onClose={() => { setTransferOpen(false); setEditingTransferId(null) }}
         hesaplar={hesaplar}
+        editingEslesmeId={editingTransferId}
         onSaved={load}
       />
     </div>
