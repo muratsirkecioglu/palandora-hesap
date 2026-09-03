@@ -145,6 +145,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   useEffect(() => {
     if (!open) return
     setError(null)
+    // Önceki denemede takılı kalmış olabilir; yoksa Kaydet butonu kalıcı devre dışı kalır.
+    setSaving(false)
     setLinkedMalzemeId(null)
     setMalzemeAlt(defaultMalzemeAlt)
     setLinkedDemirbasId(null)
@@ -333,7 +335,10 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   }
 
   async function handleSave() {
-    if (!form.aciklama || !form.tutar || !form.tarih) return
+    if (!form.aciklama || !form.tutar || !form.tarih) {
+      setError("Açıklama, tutar ve tarih zorunludur.")
+      return
+    }
     if (isMalzemeGider && (!malzemeAlt.ad || !malzemeAlt.miktar)) {
       setError("Stok bilgisi için malzeme adı ve miktar zorunludur.")
       return
@@ -346,136 +351,145 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setSaving(true)
     setError(null)
 
-    const toplam = parseFloat(form.tutar)
-    const gecerliOdemeler = odemeSatirlar.filter(o => parseFloat(o.tutar) > 0)
+    try {
+      const toplam = parseFloat(form.tutar)
+      const gecerliOdemeler = odemeSatirlar.filter(o => parseFloat(o.tutar) > 0)
 
-    const islemPayload = {
-      tarih: form.tarih,
-      aciklama: form.aciklama,
-      tutar: toplam,
-      tur: form.tur,
-      kategori: form.kategori,
-      vade_tarihi: form.vade_tarihi || null,
-      notlar: form.notlar || null,
-      adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
-      nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
-      nakliye_faturali: form.nakliye_faturali,
-      faturali: form.faturali,
-      bagli_gelir_islem_id: (isHizmetGider && form.bagli_gelir_islem_id) ? form.bagli_gelir_islem_id : null,
-      kullanici_id: user!.id,
-    }
-
-    let islemId: string
-
-    if (editing) {
-      const { error } = await supabase.from("islemler").update(islemPayload).eq("id", editing.id)
-      if (error) { setError(error.message); setSaving(false); return }
-      islemId = editing.id
-      await supabase.from("odemeler").delete().eq("islem_id", islemId)
-      await supabase.from("islem_stok").delete().eq("islem_id", islemId)
-      // Kategori Malzeme'den başka bir türe değiştiyse bağlı malzeme kaydını sil
-      if (linkedMalzemeId && !isMalzemeGider) {
-        await supabase.from("malzemeler").delete().eq("id", linkedMalzemeId)
-      }
-    } else {
-      const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
-      if (error) { setError(error.message); setSaving(false); return }
-      islemId = data.id
-    }
-
-    // Ödeme satırlarını kaydet
-    if (gecerliOdemeler.length > 0) {
-      await supabase.from("odemeler").insert(
-        gecerliOdemeler.map(o => ({
-          islem_id: islemId,
-          tarih: o.tarih,
-          tutar: parseFloat(o.tutar),
-          hesap_id: o.hesap_id || null,
-          aciklama: o.aciklama || null,
-          kullanici_id: user!.id,
-        }))
-      )
-    }
-
-    // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
-    if (isDemirbasGider) {
-      const demirbasPayload = {
-        ad: demirbasAlt.ad,
-        kategori: demirbasAlt.db_kategori,
-        marka: demirbasAlt.marka || null,
-        model: demirbasAlt.model || null,
-        seri_no: demirbasAlt.seri_no || null,
-        konum: demirbasAlt.konum || null,
-        garanti_bitis: demirbasAlt.garanti_bitis || null,
-        zimmet_kullanici_id: demirbasAlt.zimmet_kullanici_id || null,
-        zimmet_tarihi: demirbasAlt.zimmet_tarihi || null,
-        alis_fiyati: toplam,
-        alis_tarihi: form.tarih,
-        durum: "aktif" as const,
-        kaynak_islem_id: islemId,
-        updated_at: new Date().toISOString(),
-      }
-      if (linkedDemirbasId) {
-        const { error: dbErr } = await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
-        if (dbErr) { setError(dbErr.message); setSaving(false); return }
-      } else {
-        const { error: dbErr } = await supabase.from("demirbaslar").insert(demirbasPayload)
-        if (dbErr) { setError(dbErr.message); setSaving(false); return }
-      }
-    }
-
-    // ── Malzeme gider: malzeme kaydı + giris stok hareketi ───────────────
-    if (isMalzemeGider) {
-      const miktar = parseFloat(malzemeAlt.miktar) || 0
-      const nakliye = parseFloat(form.nakliye_tutari) || 0
-      const birimFiyat = miktar > 0 ? (toplam + nakliye) / miktar : 0
-      const malzemePayload = {
-        ad: malzemeAlt.ad,
-        kategori: malzemeAlt.mal_kategori,
-        birim: malzemeAlt.birim,
-        min_miktar: parseFloat(malzemeAlt.min_miktar) || 0,
-        aciklama: "",
+      const islemPayload = {
+        tarih: form.tarih,
+        aciklama: form.aciklama,
+        tutar: toplam,
+        tur: form.tur,
+        kategori: form.kategori,
+        vade_tarihi: form.vade_tarihi || null,
+        notlar: form.notlar || null,
+        adam_saat: form.adam_saat ? parseFloat(form.adam_saat) : null,
+        nakliye_tutari: form.nakliye_tutari ? parseFloat(form.nakliye_tutari) : null,
+        nakliye_faturali: form.nakliye_faturali,
+        faturali: form.faturali,
+        bagli_gelir_islem_id: (isHizmetGider && form.bagli_gelir_islem_id) ? form.bagli_gelir_islem_id : null,
         kullanici_id: user!.id,
       }
 
-      let malzemeId = linkedMalzemeId
-      if (malzemeId) {
-        await supabase.from("malzemeler").update({ ...malzemePayload, updated_at: new Date().toISOString() }).eq("id", malzemeId)
+      let islemId: string
+
+      if (editing) {
+        const { error } = await supabase.from("islemler").update(islemPayload).eq("id", editing.id)
+        if (error) { setError(error.message); return }
+        islemId = editing.id
+        await supabase.from("odemeler").delete().eq("islem_id", islemId)
+        await supabase.from("islem_stok").delete().eq("islem_id", islemId)
+        // Kategori Malzeme'den başka bir türe değiştiyse bağlı malzeme kaydını sil
+        if (linkedMalzemeId && !isMalzemeGider) {
+          await supabase.from("malzemeler").delete().eq("id", linkedMalzemeId)
+        }
       } else {
-        const { data: newM } = await supabase.from("malzemeler").insert(malzemePayload).select("id").single()
-        malzemeId = newM?.id ?? null
+        const { data, error } = await supabase.from("islemler").insert(islemPayload).select().single()
+        if (error) { setError(error.message); return }
+        islemId = data.id
       }
 
-      if (malzemeId) {
-        await supabase.from("islem_stok").insert({
-          islem_id: islemId,
-          malzeme_id: malzemeId,
-          miktar,
-          tur: "giris",
-          birim_fiyat: birimFiyat,
-        })
-      }
-    }
-
-    // ── Gelir: stoktan çıkış ───────────────────────────────────────────────
-    if (form.tur === "gelir" && stokEkle && stokSatirlar.length > 0) {
-      const gecerli = stokSatirlar.filter(s => s.malzeme_id && parseFloat(s.miktar) > 0)
-      if (gecerli.length > 0) {
-        await supabase.from("islem_stok").insert(
-          gecerli.map(s => ({
+      // Ödeme satırlarını kaydet
+      if (gecerliOdemeler.length > 0) {
+        const { error: odemeErr } = await supabase.from("odemeler").insert(
+          gecerliOdemeler.map(o => ({
             islem_id: islemId,
-            malzeme_id: s.malzeme_id,
-            miktar: parseFloat(s.miktar),
-            tur: "cikis",
-            birim_fiyat: parseFloat(s.birim_fiyat || "0"),
+            tarih: o.tarih,
+            tutar: parseFloat(o.tutar),
+            hesap_id: o.hesap_id || null,
+            aciklama: o.aciklama || null,
+            kullanici_id: user!.id,
           }))
         )
+        if (odemeErr) { setError(odemeErr.message); return }
       }
-    }
 
-    setSaving(false)
-    onSaved()
-    onClose()
+      // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
+      if (isDemirbasGider) {
+        const demirbasPayload = {
+          ad: demirbasAlt.ad,
+          kategori: demirbasAlt.db_kategori,
+          marka: demirbasAlt.marka || null,
+          model: demirbasAlt.model || null,
+          seri_no: demirbasAlt.seri_no || null,
+          konum: demirbasAlt.konum || null,
+          garanti_bitis: demirbasAlt.garanti_bitis || null,
+          zimmet_kullanici_id: demirbasAlt.zimmet_kullanici_id || null,
+          zimmet_tarihi: demirbasAlt.zimmet_tarihi || null,
+          alis_fiyati: toplam,
+          alis_tarihi: form.tarih,
+          durum: "aktif" as const,
+          kaynak_islem_id: islemId,
+          updated_at: new Date().toISOString(),
+        }
+        if (linkedDemirbasId) {
+          const { error: dbErr } = await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
+          if (dbErr) { setError(dbErr.message); return }
+        } else {
+          const { error: dbErr } = await supabase.from("demirbaslar").insert(demirbasPayload)
+          if (dbErr) { setError(dbErr.message); return }
+        }
+      }
+
+      // ── Malzeme gider: malzeme kaydı + giris stok hareketi ───────────────
+      if (isMalzemeGider) {
+        const miktar = parseFloat(malzemeAlt.miktar) || 0
+        const nakliye = parseFloat(form.nakliye_tutari) || 0
+        const birimFiyat = miktar > 0 ? (toplam + nakliye) / miktar : 0
+        const malzemePayload = {
+          ad: malzemeAlt.ad,
+          kategori: malzemeAlt.mal_kategori,
+          birim: malzemeAlt.birim,
+          min_miktar: parseFloat(malzemeAlt.min_miktar) || 0,
+          aciklama: "",
+          kullanici_id: user!.id,
+        }
+
+        let malzemeId = linkedMalzemeId
+        if (malzemeId) {
+          await supabase.from("malzemeler").update({ ...malzemePayload, updated_at: new Date().toISOString() }).eq("id", malzemeId)
+        } else {
+          const { data: newM, error: mErr } = await supabase.from("malzemeler").insert(malzemePayload).select("id").single()
+          if (mErr) { setError(mErr.message); return }
+          malzemeId = newM?.id ?? null
+        }
+
+        if (malzemeId) {
+          const { error: stokErr } = await supabase.from("islem_stok").insert({
+            islem_id: islemId,
+            malzeme_id: malzemeId,
+            miktar,
+            tur: "giris",
+            birim_fiyat: birimFiyat,
+          })
+          if (stokErr) { setError(stokErr.message); return }
+        }
+      }
+
+      // ── Gelir: stoktan çıkış ───────────────────────────────────────────────
+      if (form.tur === "gelir" && stokEkle && stokSatirlar.length > 0) {
+        const gecerli = stokSatirlar.filter(s => s.malzeme_id && parseFloat(s.miktar) > 0)
+        if (gecerli.length > 0) {
+          const { error: cikisErr } = await supabase.from("islem_stok").insert(
+            gecerli.map(s => ({
+              islem_id: islemId,
+              malzeme_id: s.malzeme_id,
+              miktar: parseFloat(s.miktar),
+              tur: "cikis",
+              birim_fiyat: parseFloat(s.birim_fiyat || "0"),
+            }))
+          )
+          if (cikisErr) { setError(cikisErr.message); return }
+        }
+      }
+
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Beklenmeyen bir hata oluştu.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
