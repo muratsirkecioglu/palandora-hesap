@@ -14,6 +14,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export type UserRole = "admin" | "calisan"
 
+export interface Sirket {
+  id: string
+  ad: string
+  aktif: boolean
+  created_at: string
+}
+
 export interface AppUser {
   id: string
   email: string
@@ -25,6 +32,7 @@ export interface AppUser {
 
 export interface Hesap {
   id: string
+  sirket_id: string
   ad: string
   tur: "banka" | "kasa" | "kredi_karti" | "kisi" | "diger"
   sahip_tipi: "sirket" | "ortak" | "calisan"
@@ -39,6 +47,7 @@ export interface Hesap {
 
 export interface Islem {
   id: string
+  sirket_id: string
   tarih: string
   aciklama: string
   tutar: number
@@ -59,6 +68,7 @@ export interface Islem {
 
 export interface Odeme {
   id: string
+  sirket_id: string
   islem_id: string
   tarih: string
   tutar: number
@@ -70,6 +80,7 @@ export interface Odeme {
 
 export interface IslemStok {
   id: string
+  sirket_id: string
   islem_id: string
   malzeme_id: string
   miktar: number
@@ -80,6 +91,7 @@ export interface IslemStok {
 
 export interface Demirbase {
   id: string
+  sirket_id: string
   ad: string
   kategori: string
   marka: string | null
@@ -102,6 +114,7 @@ export interface Demirbase {
 
 export interface Malzeme {
   id: string
+  sirket_id: string
   ad: string
   kategori: string
   birim: string

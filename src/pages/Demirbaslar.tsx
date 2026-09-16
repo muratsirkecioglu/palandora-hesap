@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info } from "lucide-react"
 import { supabase, type Demirbase, type AppUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -37,6 +38,7 @@ const defaultForm = {
 
 export function Demirbaslar() {
   const { isAdmin } = useAuth()
+  const { aktifSirketId } = useSirket()
   const [kayitlar, setKayitlar] = useState<DemirbasRow[]>([])
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,9 +51,10 @@ export function Demirbaslar() {
   const [search, setSearch] = useState("")
 
   async function load() {
+    if (!aktifSirketId) return
     setLoading(true)
     const [{ data: db }, { data: ku }] = await Promise.all([
-      supabase.from("demirbaslar").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, tarih)").order("ad"),
+      supabase.from("demirbaslar").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, tarih)").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("kullanicilar").select("*").eq("aktif", true).order("ad_soyad"),
     ])
     setKayitlar((db ?? []) as DemirbasRow[])
@@ -59,7 +62,7 @@ export function Demirbaslar() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [aktifSirketId])
 
   function f(field: string, value: string) { setForm(p => ({ ...p, [field]: value })) }
 
@@ -105,7 +108,7 @@ export function Demirbaslar() {
     if (editing) {
       await supabase.from("demirbaslar").update(payload).eq("id", editing.id)
     } else {
-      await supabase.from("demirbaslar").insert(payload)
+      await supabase.from("demirbaslar").insert({ ...payload, sirket_id: aktifSirketId })
     }
     setSaving(false)
     setDialogOpen(false)

@@ -12,8 +12,10 @@ import {
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Panel" },
@@ -29,6 +31,7 @@ const adminItems = [
 
 export function Sidebar() {
   const { appUser, signOut, isAdmin } = useAuth()
+  const { sirketler, aktifSirketId, setAktifSirketId } = useSirket()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -39,9 +42,19 @@ export function Sidebar() {
 
   const NavItems = () => (
     <>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <Building2 className="h-6 w-6 text-primary" />
-        <span className="font-semibold text-sm">Palandora</span>
+      <div className="px-4 py-3 border-b border-border space-y-2">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-6 w-6 text-primary" />
+          <span className="font-semibold text-sm">Palandora</span>
+        </div>
+        {sirketler.length > 0 && (
+          <Select value={aktifSirketId ?? ""} onValueChange={setAktifSirketId}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Şirket seçin..." /></SelectTrigger>
+            <SelectContent>
+              {sirketler.map(s => <SelectItem key={s.id} value={s.id}>{s.ad}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <nav className="flex-1 px-2 py-4 space-y-1">

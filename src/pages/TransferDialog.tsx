@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Loader2, ArrowRight } from "lucide-react"
 import { supabase, type Hesap } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -36,6 +37,7 @@ const defaultForm = {
 
 export function TransferDialog({ open, onClose, hesaplar, onSaved, editingEslesmeId }: Props) {
   const { user } = useAuth()
+  const { aktifSirketId } = useSirket()
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -156,6 +158,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved, editingEslesm
         transfer_eslesme_id: eslesmeId,
         faturali: false,
         kullanici_id: user!.id,
+        sirket_id: aktifSirketId,
       },
       {
         tarih: form.tarih,
@@ -167,6 +170,7 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved, editingEslesm
         transfer_eslesme_id: eslesmeId,
         faturali: false,
         kullanici_id: user!.id,
+        sirket_id: aktifSirketId,
       },
     ]).select("id")
 
@@ -174,8 +178,8 @@ export function TransferDialog({ open, onClose, hesaplar, onSaved, editingEslesm
 
     // Transfer ödemeleri oluştur (Hesaplar bakiyesi bu tabloya bakıyor)
     await supabase.from("odemeler").insert([
-      { islem_id: inserted[0].id, tarih: form.tarih, tutar, hesap_id: form.kaynak_hesap_id, kullanici_id: user!.id },
-      { islem_id: inserted[1].id, tarih: form.tarih, tutar, hesap_id: form.hedef_hesap_id, kullanici_id: user!.id },
+      { islem_id: inserted[0].id, tarih: form.tarih, tutar, hesap_id: form.kaynak_hesap_id, kullanici_id: user!.id, sirket_id: aktifSirketId },
+      { islem_id: inserted[1].id, tarih: form.tarih, tutar, hesap_id: form.hedef_hesap_id, kullanici_id: user!.id, sirket_id: aktifSirketId },
     ])
 
     setSaving(false)

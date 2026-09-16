@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info, ChevronDown, ChevronRight } from "lucide-react"
 import { supabase, type Malzeme, type MalzemeWithStok } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -50,6 +51,7 @@ type StokRow = {
 
 export function Stok() {
   const { isAdmin, user } = useAuth()
+  const { aktifSirketId } = useSirket()
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [cikisMap, setCikisMap] = useState<Map<string, CikisRow[]>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -64,11 +66,13 @@ export function Stok() {
   const [filterKat, setFilterKat] = useState("tumu")
 
   async function load() {
+    if (!aktifSirketId) return
     setLoading(true)
     const [{ data: malzemeData }, { data: stokData }] = await Promise.all([
-      supabase.from("malzemeler").select("*").order("ad"),
+      supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("islem_stok")
         .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
+        .eq("sirket_id", aktifSirketId)
         .order("created_at", { ascending: false }),
     ])
 
@@ -113,7 +117,7 @@ export function Stok() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [aktifSirketId])
 
   function toggleExpanded(id: string) {
     setExpanded(prev => {

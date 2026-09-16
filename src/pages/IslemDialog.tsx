@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -96,6 +97,7 @@ const defaultForm = {
 
 export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, gelirIslemleri, onSaved }: Props) {
   const { user } = useAuth()
+  const { aktifSirketId } = useSirket()
   const [form, setForm] = useState(defaultForm)
   const [stokSatirlar, setStokSatirlar] = useState<StokSatir[]>([])
   const [stokEkle, setStokEkle] = useState(false)
@@ -369,6 +371,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         faturali: form.faturali,
         bagli_gelir_islem_id: (isHizmetGider && form.bagli_gelir_islem_id) ? form.bagli_gelir_islem_id : null,
         kullanici_id: user!.id,
+        sirket_id: aktifSirketId,
       }
 
       let islemId: string
@@ -399,6 +402,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             hesap_id: o.hesap_id || null,
             aciklama: o.aciklama || null,
             kullanici_id: user!.id,
+            sirket_id: aktifSirketId,
           }))
         )
         if (odemeErr) { setError(odemeErr.message); return }
@@ -426,7 +430,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           const { error: dbErr } = await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
           if (dbErr) { setError(dbErr.message); return }
         } else {
-          const { error: dbErr } = await supabase.from("demirbaslar").insert(demirbasPayload)
+          const { error: dbErr } = await supabase.from("demirbaslar").insert({ ...demirbasPayload, sirket_id: aktifSirketId })
           if (dbErr) { setError(dbErr.message); return }
         }
       }
@@ -443,6 +447,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           min_miktar: parseFloat(malzemeAlt.min_miktar) || 0,
           aciklama: "",
           kullanici_id: user!.id,
+          sirket_id: aktifSirketId,
         }
 
         let malzemeId = linkedMalzemeId
@@ -461,6 +466,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             miktar,
             tur: "giris",
             birim_fiyat: birimFiyat,
+            sirket_id: aktifSirketId,
           })
           if (stokErr) { setError(stokErr.message); return }
         }
@@ -477,6 +483,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               miktar: parseFloat(s.miktar),
               tur: "cikis",
               birim_fiyat: parseFloat(s.birim_fiyat || "0"),
+              sirket_id: aktifSirketId,
             }))
           )
           if (cikisErr) { setError(cikisErr.message); return }

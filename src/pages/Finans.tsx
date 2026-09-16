@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle, Wrench } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithStok, type Hesap } from "@/lib/supabase"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,6 +47,7 @@ function odemeDurumu(tutar: number, odenen: number): "odendi" | "kismi_odendi" |
 }
 
 export function Finans() {
+  const { aktifSirketId } = useSirket()
   const [islemler, setIslemler] = useState<Islem[]>([])
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
@@ -64,15 +66,16 @@ export function Finans() {
   const [copying, setCopying] = useState<Islem | null>(null)
 
   async function load() {
+    if (!aktifSirketId) return
     setLoading(true)
-    const islemQ = supabase.from("islemler").select("*").order("tarih", { ascending: false })
+    const islemQ = supabase.from("islemler").select("*").eq("sirket_id", aktifSirketId).order("tarih", { ascending: false })
 
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
       islemQ,
-      supabase.from("malzemeler").select("*").order("ad"),
-      supabase.from("islem_stok").select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, tarih, faturali, nakliye_faturali)"),
-      supabase.from("hesaplar").select("*").order("ad"),
-      supabase.from("odemeler").select("islem_id, tutar, hesap_id"),
+      supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
+      supabase.from("islem_stok").select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, tarih, faturali, nakliye_faturali)").eq("sirket_id", aktifSirketId),
+      supabase.from("hesaplar").select("*").eq("sirket_id", aktifSirketId).order("ad"),
+      supabase.from("odemeler").select("islem_id, tutar, hesap_id").eq("sirket_id", aktifSirketId),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
@@ -124,7 +127,7 @@ export function Finans() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [aktifSirketId])
 
   function openNew() { setEditing(null); setCopying(null); setIslemDialogOpen(true) }
   function openEdit(i: Islem) { setEditing(i); setCopying(null); setIslemDialogOpen(true) }

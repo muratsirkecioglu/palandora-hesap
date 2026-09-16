@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { TrendingUp, TrendingDown, AlertTriangle, Wallet } from "lucide-react"
 import { supabase, type Islem } from "@/lib/supabase"
+import { useSirket } from "@/contexts/SirketContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import {
@@ -15,17 +16,21 @@ interface SummaryStats {
 }
 
 export function Dashboard() {
+  const { aktifSirketId } = useSirket()
   const [stats, setStats] = useState<SummaryStats>({ toplamGelir: 0, toplamGider: 0, bakiye: 0, kritikStok: 0 })
   const [sonIslemler, setSonIslemler] = useState<Islem[]>([])
   const [chartData, setChartData] = useState<{ ay: string; gelir: number; gider: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function load() {
-      const islemQuery = supabase.from("islemler").select("*").order("tarih", { ascending: false })
+    if (!aktifSirketId) return
+    setLoading(true)
 
-      const malzemeQuery = supabase.from("malzemeler").select("id, min_miktar")
-      const stokQuery = supabase.from("islem_stok").select("malzeme_id, miktar, tur")
+    async function load() {
+      const islemQuery = supabase.from("islemler").select("*").eq("sirket_id", aktifSirketId!).order("tarih", { ascending: false })
+
+      const malzemeQuery = supabase.from("malzemeler").select("id, min_miktar").eq("sirket_id", aktifSirketId!)
+      const stokQuery = supabase.from("islem_stok").select("malzeme_id, miktar, tur").eq("sirket_id", aktifSirketId!)
 
       const [{ data: islemler }, { data: malzemeler }, { data: stokData }] = await Promise.all([
         islemQuery,
@@ -78,7 +83,7 @@ export function Dashboard() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [aktifSirketId])
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Yükleniyor...</div>
 

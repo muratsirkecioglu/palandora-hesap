@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
+import { SirketProvider } from "@/contexts/SirketContext"
 import { AppLayout } from "@/components/layout/AppLayout"
 import { Login } from "@/pages/Login"
 import { Dashboard } from "@/pages/Dashboard"
@@ -44,7 +45,9 @@ export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
-        <AppRoutes />
+        <SirketProvider>
+          <AppRoutes />
+        </SirketProvider>
       </AuthProvider>
     </HashRouter>
   )

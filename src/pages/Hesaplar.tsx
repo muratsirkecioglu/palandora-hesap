@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, 
 import { supabase, type Hesap } from "@/lib/supabase"
 import { TransferDialog } from "./TransferDialog"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -63,6 +64,7 @@ const defaultForm = {
 
 export function Hesaplar() {
   const { isAdmin } = useAuth()
+  const { aktifSirketId } = useSirket()
   const [hesaplar, setHesaplar] = useState<HesapRow[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -77,14 +79,17 @@ export function Hesaplar() {
   const [cariDetayMap, setCariDetayMap] = useState<Map<string, Map<string, { ad: string; borcVerilen: number; iadeEdilen: number }>>>(new Map())
 
   async function load() {
+    if (!aktifSirketId) return
     setLoading(true)
     const [{ data: hesapData }, { data: odemeData }, { data: cariIslemData }] = await Promise.all([
-      supabase.from("hesaplar").select("*").order("ad"),
+      supabase.from("hesaplar").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("odemeler")
         .select("hesap_id, tutar, islem:islemler!islem_id(tur, kategori)")
+        .eq("sirket_id", aktifSirketId)
         .not("hesap_id", "is", null),
       supabase.from("islemler")
         .select("hesap_id, tur, tutar, transfer_eslesme_id")
+        .eq("sirket_id", aktifSirketId)
         .eq("kategori", "Cari Hesap")
         .not("transfer_eslesme_id", "is", null),
     ])
@@ -137,7 +142,7 @@ export function Hesaplar() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [aktifSirketId])
 
   useEffect(() => {
     if (!selectedHesapId) { setHareketler([]); return }
@@ -203,7 +208,7 @@ export function Hesaplar() {
     if (editing) {
       await supabase.from("hesaplar").update(payload).eq("id", editing.id)
     } else {
-      await supabase.from("hesaplar").insert(payload)
+      await supabase.from("hesaplar").insert({ ...payload, sirket_id: aktifSirketId })
     }
     setSaving(false)
     setDialogOpen(false)
