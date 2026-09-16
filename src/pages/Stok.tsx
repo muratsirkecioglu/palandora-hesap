@@ -50,8 +50,8 @@ type StokRow = {
 }
 
 export function Stok() {
-  const { isAdmin, user } = useAuth()
-  const { aktifSirketId } = useSirket()
+  const { user } = useAuth()
+  const { aktifSirketId, isSirketAdmin: isAdmin } = useSirket()
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [cikisMap, setCikisMap] = useState<Map<string, CikisRow[]>>(new Map())
   const [loading, setLoading] = useState(true)

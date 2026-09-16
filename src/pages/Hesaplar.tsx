@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, Banknote, CreditCard, Landmark, Wallet, User, ArrowLeftRight, X } from "lucide-react"
 import { supabase, type Hesap } from "@/lib/supabase"
 import { TransferDialog } from "./TransferDialog"
-import { useAuth } from "@/contexts/AuthContext"
 import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -63,8 +62,7 @@ const defaultForm = {
 }
 
 export function Hesaplar() {
-  const { isAdmin } = useAuth()
-  const { aktifSirketId } = useSirket()
+  const { aktifSirketId, isSirketAdmin: isAdmin } = useSirket()
   const [hesaplar, setHesaplar] = useState<HesapRow[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)

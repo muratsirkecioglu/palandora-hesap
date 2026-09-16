@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info } from "lucide-react"
 import { supabase, type Demirbase, type AppUser } from "@/lib/supabase"
-import { useAuth } from "@/contexts/AuthContext"
 import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,8 +36,7 @@ const defaultForm = {
 }
 
 export function Demirbaslar() {
-  const { isAdmin } = useAuth()
-  const { aktifSirketId } = useSirket()
+  const { aktifSirketId, isSirketAdmin: isAdmin } = useSirket()
   const [kayitlar, setKayitlar] = useState<DemirbasRow[]>([])
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)

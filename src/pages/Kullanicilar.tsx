@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Pencil, Loader2, ShieldCheck, User, Info, AlertTriangle } from "lucide-react"
+import { Pencil, Loader2, ShieldCheck, Info, AlertTriangle } from "lucide-react"
 import { supabase, type AppUser, type Sirket } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,26 +16,31 @@ export function Kullanicilar() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AppUser | null>(null)
-  const [form, setForm] = useState({ ad_soyad: "", rol: "calisan" as "admin" | "calisan", sirketIds: [] as string[] })
+  // sirketRoller: sirket_id → rol. Anahtarın varlığı üyeliği, değeri o şirketteki rolü belirtir.
+  const [form, setForm] = useState({
+    ad_soyad: "",
+    rol: "calisan" as "admin" | "calisan",
+    sirketRoller: {} as Record<string, "admin" | "calisan">,
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sirketler, setSirketler] = useState<Sirket[]>([])
-  // kullanici_id → üye olduğu şirket id'leri
-  const [uyelikler, setUyelikler] = useState<Map<string, string[]>>(new Map())
+  // kullanici_id → { sirket_id: rol }
+  const [uyelikler, setUyelikler] = useState<Map<string, Record<string, "admin" | "calisan">>>(new Map())
 
   async function load() {
     setLoading(true)
     const [{ data: ku }, { data: si }, { data: uy }] = await Promise.all([
       supabase.from("kullanicilar").select("*").order("created_at"),
       supabase.from("sirketler").select("*").order("ad"),
-      supabase.from("kullanici_sirket").select("kullanici_id, sirket_id"),
+      supabase.from("kullanici_sirket").select("kullanici_id, sirket_id, rol"),
     ])
     setKullanicilar((ku ?? []) as AppUser[])
     setSirketler((si ?? []) as Sirket[])
 
-    const map = new Map<string, string[]>()
-    for (const r of (uy ?? []) as { kullanici_id: string; sirket_id: string }[]) {
-      map.set(r.kullanici_id, [...(map.get(r.kullanici_id) ?? []), r.sirket_id])
+    const map = new Map<string, Record<string, "admin" | "calisan">>()
+    for (const r of (uy ?? []) as { kullanici_id: string; sirket_id: string; rol: "admin" | "calisan" }[]) {
+      map.set(r.kullanici_id, { ...(map.get(r.kullanici_id) ?? {}), [r.sirket_id]: r.rol })
     }
     setUyelikler(map)
     setLoading(false)
@@ -45,18 +50,19 @@ export function Kullanicilar() {
 
   function openEdit(u: AppUser) {
     setEditing(u)
-    setForm({ ad_soyad: u.ad_soyad, rol: u.rol, sirketIds: uyelikler.get(u.id) ?? [] })
+    setForm({ ad_soyad: u.ad_soyad, rol: u.rol, sirketRoller: { ...(uyelikler.get(u.id) ?? {}) } })
     setError(null)
     setDialogOpen(true)
   }
 
-  function toggleSirket(sirketId: string) {
-    setForm(f => ({
-      ...f,
-      sirketIds: f.sirketIds.includes(sirketId)
-        ? f.sirketIds.filter(id => id !== sirketId)
-        : [...f.sirketIds, sirketId],
-    }))
+  // "yok" = üyelik kaldırılır; "calisan"/"admin" = o rolle üye olur
+  function setSirketRol(sirketId: string, deger: string) {
+    setForm(f => {
+      const yeni = { ...f.sirketRoller }
+      if (deger === "yok") delete yeni[sirketId]
+      else yeni[sirketId] = deger as "admin" | "calisan"
+      return { ...f, sirketRoller: yeni }
+    })
   }
 
   async function handleSave() {
@@ -70,20 +76,29 @@ export function Kullanicilar() {
     }).eq("id", editing.id)
     if (error) { setError(error.message); setSaving(false); return }
 
-    // Üyelik farkını uygula: yalnızca değişenleri ekle/sil
-    const mevcut = uyelikler.get(editing.id) ?? []
-    const eklenecek = form.sirketIds.filter(id => !mevcut.includes(id))
-    const silinecek = mevcut.filter(id => !form.sirketIds.includes(id))
+    // Üyelik farkını uygula: eklenen, kaldırılan ve rolü değişenler
+    const mevcut = uyelikler.get(editing.id) ?? {}
+    const yeni = form.sirketRoller
+
+    const eklenecek = Object.keys(yeni).filter(id => !(id in mevcut))
+    const silinecek = Object.keys(mevcut).filter(id => !(id in yeni))
+    const degisen = Object.keys(yeni).filter(id => id in mevcut && mevcut[id] !== yeni[id])
 
     if (eklenecek.length > 0) {
       const { error: ekErr } = await supabase.from("kullanici_sirket")
-        .insert(eklenecek.map(sirket_id => ({ kullanici_id: editing.id, sirket_id })))
+        .insert(eklenecek.map(sirket_id => ({ kullanici_id: editing.id, sirket_id, rol: yeni[sirket_id] })))
       if (ekErr) { setError(ekErr.message); setSaving(false); return }
     }
     if (silinecek.length > 0) {
       const { error: silErr } = await supabase.from("kullanici_sirket")
         .delete().eq("kullanici_id", editing.id).in("sirket_id", silinecek)
       if (silErr) { setError(silErr.message); setSaving(false); return }
+    }
+    for (const sirketId of degisen) {
+      const { error: gErr } = await supabase.from("kullanici_sirket")
+        .update({ rol: yeni[sirketId] })
+        .eq("kullanici_id", editing.id).eq("sirket_id", sirketId)
+      if (gErr) { setError(gErr.message); setSaving(false); return }
     }
 
     setSaving(false)
@@ -149,15 +164,17 @@ export function Kullanicilar() {
                       </div>
                       <p className="text-xs text-muted-foreground">{u.email}</p>
                       <div className="flex items-center gap-1 flex-wrap mt-1">
-                        {(uyelikler.get(u.id) ?? []).length === 0 ? (
+                        {Object.keys(uyelikler.get(u.id) ?? {}).length === 0 ? (
                           <Badge variant="outline" className="text-[10px] py-0 gap-1 border-orange-300 text-orange-600">
                             <AlertTriangle className="h-3 w-3" /> Şirket atanmamış
                           </Badge>
                         ) : (
                           sirketler
-                            .filter(s => (uyelikler.get(u.id) ?? []).includes(s.id))
+                            .filter(s => s.id in (uyelikler.get(u.id) ?? {}))
                             .map(s => (
-                              <Badge key={s.id} variant="secondary" className="text-[10px] py-0">{s.ad}</Badge>
+                              <Badge key={s.id} variant="secondary" className="text-[10px] py-0">
+                                {s.ad} · {uyelikler.get(u.id)![s.id] === "admin" ? "Yönetici" : "Çalışan"}
+                              </Badge>
                             ))
                         )}
                       </div>
@@ -165,12 +182,11 @@ export function Kullanicilar() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Badge variant={u.rol === "admin" ? "default" : "secondary"} className="gap-1">
-                      {u.rol === "admin"
-                        ? <><ShieldCheck className="h-3 w-3" /> Yönetici</>
-                        : <><User className="h-3 w-3" /> Çalışan</>
-                      }
-                    </Badge>
+                    {u.rol === "admin" && (
+                      <Badge variant="default" className="gap-1" title="Şirket açabilir ve üyelik yönetebilir">
+                        <ShieldCheck className="h-3 w-3" /> Sistem Yöneticisi
+                      </Badge>
+                    )}
                     <Badge variant={u.aktif ? "success" : "outline"}>
                       {u.aktif ? "Aktif" : "Pasif"}
                     </Badge>
@@ -216,17 +232,20 @@ export function Kullanicilar() {
               <Input value={editing?.email ?? ""} disabled className="bg-muted" />
             </div>
             <div className="space-y-1.5">
-              <Label>Rol</Label>
+              <Label>Sistem Rolü</Label>
               <Select
                 value={form.rol}
                 onValueChange={v => setForm(f => ({ ...f, rol: v as "admin" | "calisan" }))}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="calisan">Çalışan</SelectItem>
-                  <SelectItem value="admin">Yönetici (Admin)</SelectItem>
+                  <SelectItem value="calisan">Normal Kullanıcı</SelectItem>
+                  <SelectItem value="admin">Sistem Yöneticisi</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Yalnızca şirket açma ve kullanıcı/üyelik yönetimi yetkisini belirler. Şirket içi yetkiler aşağıdaki şirket rolünden gelir.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Şirket Üyelikleri</Label>
@@ -235,20 +254,26 @@ export function Kullanicilar() {
               ) : (
                 <div className="rounded-md border border-border divide-y divide-border">
                   {sirketler.map(s => (
-                    <label key={s.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent/50">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-border"
-                        checked={form.sirketIds.includes(s.id)}
-                        onChange={() => toggleSirket(s.id)}
-                      />
-                      <span className="text-sm">{s.ad}</span>
-                    </label>
+                    <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                      <span className="text-sm truncate">{s.ad}</span>
+                      <Select
+                        value={form.sirketRoller[s.id] ?? "yok"}
+                        onValueChange={v => setSirketRol(s.id, v)}
+                      >
+                        <SelectTrigger className="h-7 w-32 text-xs shrink-0"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="yok">Üye değil</SelectItem>
+                          <SelectItem value="calisan">Çalışan</SelectItem>
+                          <SelectItem value="admin">Yönetici</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   ))}
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Kullanıcı yalnızca işaretli şirketlerin verisini görebilir. Hiçbiri seçili değilse uygulamaya giriş yapabilir ama hiçbir veriye erişemez.
+                Rol şirkete özeldir — kullanıcı bir şirkette Yönetici, diğerinde Çalışan olabilir.
+                "Üye değil" seçilen şirketin hiçbir verisini göremez.
               </p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}

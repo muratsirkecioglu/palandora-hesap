@@ -7,6 +7,10 @@ interface SirketContextValue {
   aktifSirketId: string | null
   aktifSirket: Sirket | null
   setAktifSirketId: (id: string) => void
+  /** Kullanıcının AKTİF şirketteki rolü — sistem rolünden bağımsızdır. */
+  sirketRol: "admin" | "calisan" | null
+  /** Aktif şirkette yönetici mi? Şirket içi yetkiler bunu kullanmalı. */
+  isSirketAdmin: boolean
   loading: boolean
   yenile: () => Promise<void>
 }
@@ -19,6 +23,7 @@ export function SirketProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [sirketler, setSirketler] = useState<Sirket[]>([])
   const [aktifSirketId, setAktifSirketIdState] = useState<string | null>(null)
+  const [roller, setRoller] = useState<Map<string, "admin" | "calisan">>(new Map())
   const [loading, setLoading] = useState(true)
 
   function setAktifSirketId(id: string) {
@@ -27,12 +32,21 @@ export function SirketProvider({ children }: { children: ReactNode }) {
   }
 
   async function yenile() {
-    if (!user) { setSirketler([]); setAktifSirketIdState(null); setLoading(false); return }
+    if (!user) { setSirketler([]); setRoller(new Map()); setAktifSirketIdState(null); setLoading(false); return }
     setLoading(true)
     // RLS gereği burada zaten yalnızca üye olunan şirketler döner.
-    const { data } = await supabase.from("sirketler").select("*").eq("aktif", true).order("ad")
+    const [{ data }, { data: uyelikData }] = await Promise.all([
+      supabase.from("sirketler").select("*").eq("aktif", true).order("ad"),
+      supabase.from("kullanici_sirket").select("sirket_id, rol").eq("kullanici_id", user.id),
+    ])
     const list = (data ?? []) as Sirket[]
     setSirketler(list)
+
+    const rolMap = new Map<string, "admin" | "calisan">()
+    for (const u of (uyelikData ?? []) as { sirket_id: string; rol: "admin" | "calisan" }[]) {
+      rolMap.set(u.sirket_id, u.rol)
+    }
+    setRoller(rolMap)
 
     let kayitli: string | null = null
     try { kayitli = localStorage.getItem(STORAGE_KEY) } catch { /* yoksay */ }
@@ -52,6 +66,8 @@ export function SirketProvider({ children }: { children: ReactNode }) {
       aktifSirketId,
       aktifSirket: sirketler.find(s => s.id === aktifSirketId) ?? null,
       setAktifSirketId,
+      sirketRol: aktifSirketId ? (roller.get(aktifSirketId) ?? null) : null,
+      isSirketAdmin: aktifSirketId ? roller.get(aktifSirketId) === "admin" : false,
       loading,
       yenile,
     }}>
