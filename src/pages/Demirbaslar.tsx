@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info, Banknote } from "lucide-react"
 import { supabase, type Demirbase, type AppUser } from "@/lib/supabase"
 import { useSirket } from "@/contexts/SirketContext"
+import { DemirbasSatisDialog } from "./DemirbasSatisDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,13 +18,17 @@ const DURUMLAR = [
   { value: "bakimda", label: "Bakımda" },
   { value: "hurda", label: "Hurda" },
   { value: "devredildi", label: "Devredildi" },
+  { value: "satildi", label: "Satıldı" },
 ]
 const DURUM_VARIANT: Record<string, "success" | "warning" | "destructive" | "outline"> = {
   aktif: "success",
   bakimda: "warning",
   hurda: "destructive",
   devredildi: "outline",
+  satildi: "outline",
 }
+/** Artık elde olmayan demirbaşlar — envanter toplamlarına girmez. */
+const ELDEN_CIKAN = ["satildi", "hurda", "devredildi"]
 
 interface KaynakIslem { tutar: number; tarih: string }
 type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
@@ -41,6 +46,7 @@ export function Demirbaslar() {
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [satisDemirbas, setSatisDemirbas] = useState<DemirbasRow | null>(null)
   const [editing, setEditing] = useState<DemirbasRow | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
@@ -136,9 +142,15 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
+  // Envanter toplamları yalnızca elde olan demirbaşları kapsar.
   // alis_fiyati birim fiyat olduğundan grubun değeri adetle çarpılır.
-  const toplamDeger = kayitlar.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0)
-  const toplamAdet = kayitlar.reduce((s, d) => s + (d.adet ?? 1), 0)
+  const eldekiler = kayitlar.filter(d => !ELDEN_CIKAN.includes(d.durum))
+  const toplamDeger = eldekiler.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0)
+  const toplamAdet = eldekiler.reduce((s, d) => s + (d.adet ?? 1), 0)
+  const satisKarZarar = kayitlar
+    .filter(d => d.durum === "satildi" && d.satis_fiyati != null)
+    .reduce((s, d) => s + ((d.satis_fiyati ?? 0) - (d.alis_fiyati ?? 0)) * (d.adet ?? 1), 0)
+  const satilanVar = kayitlar.some(d => d.durum === "satildi")
   const garantiUyari = kayitlar.filter(d => d.garanti_bitis && d.garanti_bitis <= today && d.durum === "aktif").length
   const bakimUyari = kayitlar.filter(d => d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today && d.durum === "aktif").length
 
@@ -170,15 +182,24 @@ export function Demirbaslar() {
       {/* Özet */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card><CardContent className="p-4 text-center">
-          <p className="text-xs text-muted-foreground mb-1">Toplam Eşya</p>
+          <p className="text-xs text-muted-foreground mb-1">Eldeki Eşya</p>
           <p className="text-lg font-bold">{toplamAdet}</p>
-          {toplamAdet !== kayitlar.length && (
-            <p className="text-[10px] text-muted-foreground">{kayitlar.length} kayıt</p>
+          {toplamAdet !== eldekiler.length && (
+            <p className="text-[10px] text-muted-foreground">{eldekiler.length} kayıt</p>
           )}
         </CardContent></Card>
         <Card><CardContent className="p-4 text-center">
-          <p className="text-xs text-muted-foreground mb-1">Toplam Değer</p>
-          <p className="text-lg font-bold">{formatCurrency(toplamDeger)}</p>
+          <p className="text-xs text-muted-foreground mb-1">{satilanVar ? "Satış Kâr/Zarar" : "Toplam Değer"}</p>
+          {satilanVar ? (
+            <p className={`text-lg font-bold ${satisKarZarar >= 0 ? "text-green-600" : "text-red-500"}`}>
+              {satisKarZarar >= 0 ? "+" : ""}{formatCurrency(satisKarZarar)}
+            </p>
+          ) : (
+            <p className="text-lg font-bold">{formatCurrency(toplamDeger)}</p>
+          )}
+          {satilanVar && (
+            <p className="text-[10px] text-muted-foreground">Envanter: {formatCurrency(toplamDeger)}</p>
+          )}
         </CardContent></Card>
         <Card><CardContent className="p-4 text-center">
           <p className="text-xs text-muted-foreground mb-1">Garanti Bitti</p>
@@ -258,6 +279,19 @@ export function Demirbaslar() {
                             🔧 Bakım: {formatDate(d.sonraki_bakim_tarihi)}{bakimGerekli ? " (gerekli)" : ""}
                           </p>
                         )}
+                        {d.durum === "satildi" && d.satis_fiyati != null && (() => {
+                          const kz = ((d.satis_fiyati ?? 0) - (d.alis_fiyati ?? 0)) * (d.adet ?? 1)
+                          return (
+                            <p>
+                              💰 Satış: {formatCurrency((d.satis_fiyati ?? 0) * (d.adet ?? 1))}
+                              {d.satis_tarihi ? ` · ${formatDate(d.satis_tarihi)}` : ""}
+                              {" · "}
+                              <span className={kz >= 0 ? "text-green-600" : "text-red-500"}>
+                                {kz >= 0 ? "Kâr" : "Zarar"} {formatCurrency(Math.abs(kz))}
+                              </span>
+                            </p>
+                          )
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -271,6 +305,16 @@ export function Demirbaslar() {
                       )}
                       {isAdmin && (
                         <>
+                          {!ELDEN_CIKAN.includes(d.durum) && (
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-7 w-7 text-green-600 hover:text-green-600"
+                              title="Sat"
+                              onClick={() => setSatisDemirbas(d)}
+                            >
+                              <Banknote className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -417,6 +461,13 @@ export function Demirbaslar() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DemirbasSatisDialog
+        open={!!satisDemirbas}
+        onClose={() => setSatisDemirbas(null)}
+        demirbas={satisDemirbas}
+        onSaved={load}
+      />
     </div>
   )
 }

@@ -105,7 +105,11 @@ export interface Demirbase {
   /** BİRİM alış fiyatı (grubun tamamı değil). */
   alis_fiyati: number | null
   konum: string | null
-  durum: "aktif" | "bakimda" | "hurda" | "devredildi"
+  durum: "aktif" | "bakimda" | "hurda" | "devredildi" | "satildi"
+  satis_tarihi: string | null
+  /** BİRİM satış fiyatı. */
+  satis_fiyati: number | null
+  satis_islem_id: string | null
   zimmet_kullanici_id: string | null
   zimmet_tarihi: string | null
   garanti_bitis: string | null
