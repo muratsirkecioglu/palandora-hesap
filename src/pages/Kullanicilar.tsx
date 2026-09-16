@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
-import { Pencil, Loader2, ShieldCheck, Info, AlertTriangle } from "lucide-react"
+import { Pencil, Loader2, ShieldCheck, Info, AlertTriangle, Plus, Building2 } from "lucide-react"
 import { supabase, type AppUser, type Sirket } from "@/lib/supabase"
+import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,8 +11,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/contexts/AuthContext"
 
+const TEMA_RENKLERI = [
+  { hue: 221, ad: "Mavi" },
+  { hue: 200, ad: "Açık Mavi" },
+  { hue: 175, ad: "Turkuaz" },
+  { hue: 140, ad: "Yeşil" },
+  { hue: 45, ad: "Amber" },
+  { hue: 25, ad: "Turuncu" },
+  { hue: 0, ad: "Kırmızı" },
+  { hue: 340, ad: "Pembe" },
+  { hue: 300, ad: "Fuşya" },
+  { hue: 262, ad: "Mor" },
+]
+
 export function Kullanicilar() {
   const { user: currentUser } = useAuth()
+  const { yenile: sirketleriYenile } = useSirket()
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -27,6 +42,54 @@ export function Kullanicilar() {
   const [sirketler, setSirketler] = useState<Sirket[]>([])
   // kullanici_id → { sirket_id: rol }
   const [uyelikler, setUyelikler] = useState<Map<string, Record<string, "admin" | "calisan">>>(new Map())
+
+  // Şirket yönetimi
+  const [sirketDialogOpen, setSirketDialogOpen] = useState(false)
+  const [editingSirket, setEditingSirket] = useState<Sirket | null>(null)
+  const [sirketForm, setSirketForm] = useState({ ad: "", tema_hue: 221 })
+  const [sirketSaving, setSirketSaving] = useState(false)
+  const [sirketError, setSirketError] = useState<string | null>(null)
+
+  function openSirketNew() {
+    setEditingSirket(null)
+    setSirketForm({ ad: "", tema_hue: 221 })
+    setSirketError(null)
+    setSirketDialogOpen(true)
+  }
+
+  function openSirketEdit(s: Sirket) {
+    setEditingSirket(s)
+    setSirketForm({ ad: s.ad, tema_hue: s.tema_hue })
+    setSirketError(null)
+    setSirketDialogOpen(true)
+  }
+
+  async function handleSirketSave() {
+    if (!sirketForm.ad.trim()) return
+    setSirketSaving(true)
+    setSirketError(null)
+
+    if (editingSirket) {
+      const { error } = await supabase.from("sirketler")
+        .update({ ad: sirketForm.ad.trim(), tema_hue: sirketForm.tema_hue })
+        .eq("id", editingSirket.id)
+      if (error) { setSirketError(error.message); setSirketSaving(false); return }
+    } else {
+      const { data, error } = await supabase.from("sirketler")
+        .insert({ ad: sirketForm.ad.trim(), tema_hue: sirketForm.tema_hue })
+        .select("id").single()
+      if (error) { setSirketError(error.message); setSirketSaving(false); return }
+      // Oluşturan kişi üye yapılmazsa RLS gereği yeni şirketi hiç göremez.
+      const { error: uyeErr } = await supabase.from("kullanici_sirket")
+        .insert({ kullanici_id: currentUser!.id, sirket_id: data.id, rol: "admin" })
+      if (uyeErr) { setSirketError(uyeErr.message); setSirketSaving(false); return }
+    }
+
+    setSirketSaving(false)
+    setSirketDialogOpen(false)
+    await load()
+    await sirketleriYenile()
+  }
 
   async function load() {
     setLoading(true)
@@ -134,6 +197,42 @@ export function Kullanicilar() {
         </div>
       </div>
 
+      {/* Şirketler */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Şirketler ({sirketler.length})</CardTitle>
+            <Button size="sm" variant="outline" onClick={openSirketNew}>
+              <Plus className="h-4 w-4" /> Yeni Şirket
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {sirketler.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6 text-sm">Henüz şirket tanımlanmamış</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {sirketler.map(s => (
+                <div key={s.id} className="flex items-center justify-between py-2.5 gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: `hsl(${s.tema_hue} 83.2% 53.3% / 0.15)` }}
+                    >
+                      <Building2 className="h-4 w-4" style={{ color: `hsl(${s.tema_hue} 83.2% 53.3%)` }} />
+                    </span>
+                    <span className="text-sm font-medium truncate">{s.ad}</span>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openSirketEdit(s)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Kullanıcılar ({kullanicilar.length})</CardTitle>
@@ -211,6 +310,53 @@ export function Kullanicilar() {
           )}
         </CardContent>
       </Card>
+
+      {/* Şirket dialogu */}
+      <Dialog open={sirketDialogOpen} onOpenChange={setSirketDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editingSirket ? "Şirketi Düzenle" : "Yeni Şirket"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Şirket Adı</Label>
+              <Input
+                value={sirketForm.ad}
+                onChange={e => setSirketForm(f => ({ ...f, ad: e.target.value }))}
+                placeholder="ör. Palandöken"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tema Rengi</Label>
+              <div className="flex flex-wrap gap-2">
+                {TEMA_RENKLERI.map(r => (
+                  <button
+                    key={r.hue}
+                    type="button"
+                    title={r.ad}
+                    onClick={() => setSirketForm(f => ({ ...f, tema_hue: r.hue }))}
+                    className={`h-8 w-8 rounded-lg transition-all ${
+                      sirketForm.tema_hue === r.hue ? "ring-2 ring-offset-2 ring-foreground scale-110" : "hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: `hsl(${r.hue} 83.2% 53.3%)` }}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Şirket seçildiğinde uygulamanın vurgu rengi buna döner — hangi şirkette olduğun bir bakışta belli olur.
+              </p>
+            </div>
+            {sirketError && <p className="text-sm text-destructive">{sirketError}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setSirketDialogOpen(false)}>İptal</Button>
+              <Button onClick={handleSirketSave} disabled={sirketSaving || !sirketForm.ad.trim()}>
+                {sirketSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Kaydet
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Düzenleme dialogu */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -31,7 +31,7 @@ const adminItems = [
 
 export function Sidebar() {
   const { appUser, signOut, isAdmin } = useAuth()
-  const { sirketler, aktifSirketId, setAktifSirketId } = useSirket()
+  const { sirketler, aktifSirketId, aktifSirket, setAktifSirketId } = useSirket()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -43,11 +43,12 @@ export function Sidebar() {
   const NavItems = () => (
     <>
       <div className="px-4 py-3 border-b border-border space-y-2">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-sm">Palandora</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <Building2 className="h-6 w-6 text-primary shrink-0" />
+          <span className="font-semibold text-sm truncate">{aktifSirket?.ad ?? "Palandora"}</span>
         </div>
-        {sirketler.length > 0 && (
+        {/* Tek şirket varsa adı zaten üstte yazıyor; seçiciyi göstermeye gerek yok. */}
+        {sirketler.length > 1 && (
           <Select value={aktifSirketId ?? ""} onValueChange={setAktifSirketId}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Şirket seçin..." /></SelectTrigger>
             <SelectContent>
@@ -131,9 +132,9 @@ export function Sidebar() {
     <>
       {/* Mobile top bar */}
       <div className="sm:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-background border-b border-border">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">Palandora</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <Building2 className="h-5 w-5 text-primary shrink-0" />
+          <span className="font-semibold text-sm truncate">{aktifSirket?.ad ?? "Palandora"}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

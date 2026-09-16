@@ -60,11 +60,22 @@ export function SirketProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { yenile() }, [user?.id])
 
+  const aktifSirket = sirketler.find(s => s.id === aktifSirketId) ?? null
+
+  // Aktif şirketin rengini temaya uygula. Yalnızca ton değişir; doygunluk ve
+  // parlaklık CSS'te açık/koyu temaya ait kalır (bkz. index.css).
+  useEffect(() => {
+    const hue = aktifSirket?.tema_hue
+    const kok = document.documentElement
+    if (hue == null) kok.style.removeProperty("--primary-hue")
+    else kok.style.setProperty("--primary-hue", String(hue))
+  }, [aktifSirket?.tema_hue])
+
   return (
     <SirketContext.Provider value={{
       sirketler,
       aktifSirketId,
-      aktifSirket: sirketler.find(s => s.id === aktifSirketId) ?? null,
+      aktifSirket,
       setAktifSirketId,
       sirketRol: aktifSirketId ? (roller.get(aktifSirketId) ?? null) : null,
       isSirketAdmin: aktifSirketId ? roller.get(aktifSirketId) === "admin" : false,

@@ -18,6 +18,8 @@ export interface Sirket {
   id: string
   ad: string
   aktif: boolean
+  /** HSL renk tonu (0-360). Uygulamanın vurgu rengini belirler. */
+  tema_hue: number
   created_at: string
 }
 
