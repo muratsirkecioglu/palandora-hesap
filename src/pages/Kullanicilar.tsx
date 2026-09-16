@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import { Pencil, Loader2, ShieldCheck, User, Info } from "lucide-react"
-import { supabase, type AppUser } from "@/lib/supabase"
+import { Pencil, Loader2, ShieldCheck, User, Info, AlertTriangle } from "lucide-react"
+import { supabase, type AppUser, type Sirket } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,14 +16,28 @@ export function Kullanicilar() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AppUser | null>(null)
-  const [form, setForm] = useState({ ad_soyad: "", rol: "calisan" as "admin" | "calisan" })
+  const [form, setForm] = useState({ ad_soyad: "", rol: "calisan" as "admin" | "calisan", sirketIds: [] as string[] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sirketler, setSirketler] = useState<Sirket[]>([])
+  // kullanici_id → üye olduğu şirket id'leri
+  const [uyelikler, setUyelikler] = useState<Map<string, string[]>>(new Map())
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from("kullanicilar").select("*").order("created_at")
-    setKullanicilar((data ?? []) as AppUser[])
+    const [{ data: ku }, { data: si }, { data: uy }] = await Promise.all([
+      supabase.from("kullanicilar").select("*").order("created_at"),
+      supabase.from("sirketler").select("*").order("ad"),
+      supabase.from("kullanici_sirket").select("kullanici_id, sirket_id"),
+    ])
+    setKullanicilar((ku ?? []) as AppUser[])
+    setSirketler((si ?? []) as Sirket[])
+
+    const map = new Map<string, string[]>()
+    for (const r of (uy ?? []) as { kullanici_id: string; sirket_id: string }[]) {
+      map.set(r.kullanici_id, [...(map.get(r.kullanici_id) ?? []), r.sirket_id])
+    }
+    setUyelikler(map)
     setLoading(false)
   }
 
@@ -31,20 +45,47 @@ export function Kullanicilar() {
 
   function openEdit(u: AppUser) {
     setEditing(u)
-    setForm({ ad_soyad: u.ad_soyad, rol: u.rol })
+    setForm({ ad_soyad: u.ad_soyad, rol: u.rol, sirketIds: uyelikler.get(u.id) ?? [] })
     setError(null)
     setDialogOpen(true)
+  }
+
+  function toggleSirket(sirketId: string) {
+    setForm(f => ({
+      ...f,
+      sirketIds: f.sirketIds.includes(sirketId)
+        ? f.sirketIds.filter(id => id !== sirketId)
+        : [...f.sirketIds, sirketId],
+    }))
   }
 
   async function handleSave() {
     if (!editing || !form.ad_soyad) return
     setSaving(true)
     setError(null)
+
     const { error } = await supabase.from("kullanicilar").update({
       ad_soyad: form.ad_soyad,
       rol: form.rol,
     }).eq("id", editing.id)
     if (error) { setError(error.message); setSaving(false); return }
+
+    // Üyelik farkını uygula: yalnızca değişenleri ekle/sil
+    const mevcut = uyelikler.get(editing.id) ?? []
+    const eklenecek = form.sirketIds.filter(id => !mevcut.includes(id))
+    const silinecek = mevcut.filter(id => !form.sirketIds.includes(id))
+
+    if (eklenecek.length > 0) {
+      const { error: ekErr } = await supabase.from("kullanici_sirket")
+        .insert(eklenecek.map(sirket_id => ({ kullanici_id: editing.id, sirket_id })))
+      if (ekErr) { setError(ekErr.message); setSaving(false); return }
+    }
+    if (silinecek.length > 0) {
+      const { error: silErr } = await supabase.from("kullanici_sirket")
+        .delete().eq("kullanici_id", editing.id).in("sirket_id", silinecek)
+      if (silErr) { setError(silErr.message); setSaving(false); return }
+    }
+
     setSaving(false)
     setDialogOpen(false)
     load()
@@ -72,7 +113,8 @@ export function Kullanicilar() {
           <p className="text-blue-700">
             Supabase Dashboard → <strong>Authentication → Users → Invite user</strong> ile kullanıcıyı davet edin.
             Daveti kabul edip şifre oluşturunca uygulama otomatik olarak <em>Çalışan</em> rolüyle kaydeder.
-            Buradan rolünü değiştirebilirsiniz.
+            Ardından buradaki kalem ikonuyla rolünü ve <strong>hangi şirketlere üye olacağını</strong> belirleyin —
+            şirket atanmayan kullanıcı hiçbir veri göremez.
           </p>
         </div>
       </div>
@@ -106,6 +148,19 @@ export function Kullanicilar() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">{u.email}</p>
+                      <div className="flex items-center gap-1 flex-wrap mt-1">
+                        {(uyelikler.get(u.id) ?? []).length === 0 ? (
+                          <Badge variant="outline" className="text-[10px] py-0 gap-1 border-orange-300 text-orange-600">
+                            <AlertTriangle className="h-3 w-3" /> Şirket atanmamış
+                          </Badge>
+                        ) : (
+                          sirketler
+                            .filter(s => (uyelikler.get(u.id) ?? []).includes(s.id))
+                            .map(s => (
+                              <Badge key={s.id} variant="secondary" className="text-[10px] py-0">{s.ad}</Badge>
+                            ))
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -172,6 +227,29 @@ export function Kullanicilar() {
                   <SelectItem value="admin">Yönetici (Admin)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Şirket Üyelikleri</Label>
+              {sirketler.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Tanımlı şirket yok.</p>
+              ) : (
+                <div className="rounded-md border border-border divide-y divide-border">
+                  {sirketler.map(s => (
+                    <label key={s.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent/50">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-border"
+                        checked={form.sirketIds.includes(s.id)}
+                        onChange={() => toggleSirket(s.id)}
+                      />
+                      <span className="text-sm">{s.ad}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Kullanıcı yalnızca işaretli şirketlerin verisini görebilir. Hiçbiri seçili değilse uygulamaya giriş yapabilir ama hiçbir veriye erişemez.
+              </p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end gap-2 pt-2">
