@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser, type Demirbase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
@@ -115,12 +115,17 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [bagliDemirbasSayisi, setBagliDemirbasSayisi] = useState(0)
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [bagliGiderler, setBagliGiderler] = useState<Islem[]>([])
+  // Demirbaş Satışı geliri: hangi demirbaş, kaç adet satılıyor
+  const [satilabilirler, setSatilabilirler] = useState<Demirbase[]>([])
+  const [satisDemirbasId, setSatisDemirbasId] = useState("")
+  const [satisAdet, setSatisAdet] = useState("1")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isMalzemeGider = form.tur === "gider" && form.kategori === "Malzeme"
   const isDemirbasGider = form.tur === "gider" && form.kategori === "Demirbaş"
   const isHizmetGider = form.tur === "gider" && form.kategori === "Hizmet"
+  const isDemirbasSatis = form.tur === "gelir" && form.kategori === "Demirbaş Satışı"
 
   const hesapBirimFiyat = useMemo(() => {
     const tutar = parseFloat(form.tutar) || 0
@@ -163,6 +168,26 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setDemirbasAlt(defaultDemirbasAlt)
     setOdemeSatirlar([])
     setBagliGiderler([])
+    setSatisDemirbasId("")
+    setSatisAdet("1")
+
+    // Demirbaş Satışı seçilebilmesi için eldeki demirbaşlar + bu işleme bağlı
+    // (düzenlemede zaten satılmış olan) kayıtlar.
+    if (aktifSirketId) {
+      supabase.from("demirbaslar").select("*").eq("sirket_id", aktifSirketId).order("ad")
+        .then(({ data }) => {
+          const hepsi = (data ?? []) as Demirbase[]
+          const bagli = editing ? hepsi.filter(d => d.satis_islem_id === editing.id) : []
+          setSatilabilirler([
+            ...hepsi.filter(d => !["satildi", "hurda", "devredildi"].includes(d.durum)),
+            ...bagli,
+          ])
+          if (bagli.length > 0) {
+            setSatisDemirbasId(bagli[0].id)
+            setSatisAdet(String(bagli[0].adet ?? 1))
+          }
+        })
+    }
 
     if (editing) {
       setForm({
@@ -519,6 +544,45 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             }))
           )
           if (cikisErr) { setError(cikisErr.message); return }
+        }
+      }
+
+      // ── Demirbaş Satışı geliri: seçilen demirbaşı satıldı olarak işaretle ──
+      if (isDemirbasSatis && satisDemirbasId) {
+        const d = satilabilirler.find(x => x.id === satisDemirbasId)
+        if (d) {
+          const mevcut = d.adet ?? 1
+          const satilan = Math.max(1, Math.min(mevcut, parseInt(satisAdet) || 1))
+          const satisAlanlari = {
+            durum: "satildi" as const,
+            satis_tarihi: form.tarih,
+            satis_fiyati: toplam / satilan,
+            satis_islem_id: islemId,
+            updated_at: new Date().toISOString(),
+          }
+
+          if (satilan >= mevcut) {
+            const { error: sErr } = await supabase.from("demirbaslar")
+              .update({ ...satisAlanlari, adet: satilan }).eq("id", d.id)
+            if (sErr) { setError(sErr.message); return }
+          } else {
+            // Kısmi satış: kalanı yerinde bırak, satılanı ayrı satıra taşı.
+            const { error: kErr } = await supabase.from("demirbaslar")
+              .update({ adet: mevcut - satilan, updated_at: new Date().toISOString() })
+              .eq("id", d.id)
+            if (kErr) { setError(kErr.message); return }
+
+            const { error: yErr } = await supabase.from("demirbaslar").insert({
+              ad: d.ad, kategori: d.kategori, marka: d.marka, model: d.model,
+              seri_no: d.seri_no, adet: satilan,
+              alis_tarihi: d.alis_tarihi, alis_fiyati: d.alis_fiyati,
+              konum: d.konum, garanti_bitis: d.garanti_bitis, notlar: d.notlar,
+              kaynak_islem_id: d.kaynak_islem_id,
+              sirket_id: aktifSirketId,
+              ...satisAlanlari,
+            })
+            if (yErr) { setError(yErr.message); return }
+          }
         }
       }
 
@@ -908,8 +972,54 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             </div>
           )}
 
+          {/* ── Gelir: Demirbaş Satışı ise demirbaş seç ─────────────────── */}
+          {isDemirbasSatis && (() => {
+            const secili = satilabilirler.find(d => d.id === satisDemirbasId)
+            const mevcut = secili?.adet ?? 1
+            const satilan = Math.max(1, Math.min(mevcut, parseInt(satisAdet) || 1))
+            return (
+              <div className="space-y-3 border border-border rounded-lg p-3">
+                <p className="text-sm font-medium">Satılan Demirbaş</p>
+                <Select value={satisDemirbasId} onValueChange={v => { setSatisDemirbasId(v); setSatisAdet("1") }}>
+                  <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                  <SelectContent>
+                    {satilabilirler.length === 0 ? (
+                      <SelectItem value="bos" disabled>Satılabilir demirbaş yok</SelectItem>
+                    ) : satilabilirler.map(d => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.ad}{(d.adet ?? 1) > 1 ? ` · ${d.adet} adet` : ""}
+                        {d.alis_fiyati != null ? ` · ${formatCurrency(d.alis_fiyati)}/adet` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {secili && mevcut > 1 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Satılan Adet</Label>
+                    <Input
+                      type="number" min="1" max={mevcut} step="1"
+                      className="h-8 text-xs w-24"
+                      value={satisAdet}
+                      onChange={e => setSatisAdet(e.target.value)}
+                    />
+                    {satilan < mevcut && (
+                      <p className="text-xs text-muted-foreground">
+                        Kalan {mevcut - satilan} adet envanterde kalacak.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Kaydedince seçilen demirbaş <strong>Satıldı</strong> olarak işaretlenir ve envanterden düşer.
+                </p>
+              </div>
+            )
+          })()}
+
           {/* ── Gelir: stoktan çıkış ────────────────────────────────────── */}
-          {form.tur === "gelir" && (
+          {form.tur === "gelir" && !isDemirbasSatis && (
             <div className="space-y-3 border border-border rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <input
@@ -974,7 +1084,13 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             const stokMaliyeti = stokSatirlar.reduce((s, satir) =>
               s + (parseFloat(satir.miktar) || 0) * (parseFloat(satir.birim_fiyat) || 0), 0)
             const hizmetToplam = bagliGiderler.reduce((s, g) => s + g.tutar + (g.nakliye_tutari ?? 0), 0)
-            const toplamGider = stokMaliyeti + hizmetToplam
+            // Demirbaş satışında maliyet, satılan adedin alış bedelidir.
+            const secilenDemirbas = isDemirbasSatis ? satilabilirler.find(d => d.id === satisDemirbasId) : undefined
+            const demirbasMaliyeti = secilenDemirbas
+              ? (secilenDemirbas.alis_fiyati ?? 0) *
+                Math.max(1, Math.min(secilenDemirbas.adet ?? 1, parseInt(satisAdet) || 1))
+              : 0
+            const toplamGider = stokMaliyeti + hizmetToplam + demirbasMaliyeti
             if (toplamGider === 0 && bagliGiderler.length === 0) return null
             const net = tutar - toplamGider
             return (
@@ -1007,6 +1123,12 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                       <div className="flex items-center justify-between px-3 py-2 text-muted-foreground">
                         <span>Malzeme Maliyeti</span>
                         <span className="text-red-500 font-medium">-{formatCurrency(stokMaliyeti)}</span>
+                      </div>
+                    )}
+                    {demirbasMaliyeti > 0 && (
+                      <div className="flex items-center justify-between px-3 py-2 text-muted-foreground">
+                        <span>Demirbaş Maliyeti</span>
+                        <span className="text-red-500 font-medium">-{formatCurrency(demirbasMaliyeti)}</span>
                       </div>
                     )}
                     {hizmetToplam > 0 && (
