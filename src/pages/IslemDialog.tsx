@@ -55,6 +55,9 @@ interface DemirbasAlt {
   garanti_bitis: string
   zimmet_kullanici_id: string
   zimmet_tarihi: string
+  adet: string
+  /** true ise adet kadar ayrı kayıt açılır (seri no / zimmet ayrı izlenebilsin diye). */
+  ayriKaydet: boolean
 }
 
 const defaultDemirbasAlt: DemirbasAlt = {
@@ -67,6 +70,8 @@ const defaultDemirbasAlt: DemirbasAlt = {
   garanti_bitis: "",
   zimmet_kullanici_id: "",
   zimmet_tarihi: "",
+  adet: "1",
+  ayriKaydet: false,
 }
 
 interface Props {
@@ -106,6 +111,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [linkedMalzemeId, setLinkedMalzemeId] = useState<string | null>(null)
   const [demirbasAlt, setDemirbasAlt] = useState<DemirbasAlt>(defaultDemirbasAlt)
   const [linkedDemirbasId, setLinkedDemirbasId] = useState<string | null>(null)
+  // Bu işleme bağlı demirbaş kaydı sayısı; 1'den fazlaysa alt form devre dışı kalır.
+  const [bagliDemirbasSayisi, setBagliDemirbasSayisi] = useState(0)
   const [kullanicilar, setKullanicilar] = useState<AppUser[]>([])
   const [bagliGiderler, setBagliGiderler] = useState<Islem[]>([])
   const [saving, setSaving] = useState(false)
@@ -152,6 +159,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setLinkedMalzemeId(null)
     setMalzemeAlt(defaultMalzemeAlt)
     setLinkedDemirbasId(null)
+    setBagliDemirbasSayisi(0)
     setDemirbasAlt(defaultDemirbasAlt)
     setOdemeSatirlar([])
     setBagliGiderler([])
@@ -199,12 +207,16 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (editing.tur === "gider" && editing.kategori === "Demirbaş") {
-        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", editing.id).maybeSingle()
+        // Bu işlem birden fazla demirbaş kaydı üretmiş olabilir (ayrı ayrı kaydedilmişse),
+        // o yüzden maybeSingle() kullanılamaz.
+        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", editing.id).order("ad")
           .then(({ data }) => {
-            if (data) {
-              setLinkedDemirbasId(data.id)
-              setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "", zimmet_kullanici_id: data.zimmet_kullanici_id ?? "", zimmet_tarihi: data.zimmet_tarihi ?? "" })
-            }
+            const kayitlar = data ?? []
+            setBagliDemirbasSayisi(kayitlar.length)
+            if (kayitlar.length !== 1) return
+            const d = kayitlar[0]
+            setLinkedDemirbasId(d.id)
+            setDemirbasAlt({ ad: d.ad, db_kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "", seri_no: d.seri_no ?? "", konum: d.konum ?? "", garanti_bitis: d.garanti_bitis ?? "", zimmet_kullanici_id: d.zimmet_kullanici_id ?? "", zimmet_tarihi: d.zimmet_tarihi ?? "", adet: String(d.adet ?? 1), ayriKaydet: false })
           })
       } else {
         supabase.from("islem_stok").select("*").eq("islem_id", editing.id).eq("tur", "cikis").then(({ data }) => {
@@ -257,9 +269,10 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (initialValues.tur === "gider" && initialValues.kategori === "Demirbaş") {
-        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", initialValues.id).maybeSingle()
+        supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", initialValues.id).order("ad").limit(1)
           .then(({ data }) => {
-            if (data) setDemirbasAlt({ ad: data.ad, db_kategori: data.kategori, marka: data.marka ?? "", model: data.model ?? "", seri_no: data.seri_no ?? "", konum: data.konum ?? "", garanti_bitis: data.garanti_bitis ?? "", zimmet_kullanici_id: data.zimmet_kullanici_id ?? "", zimmet_tarihi: data.zimmet_tarihi ?? "" })
+            const d = (data ?? [])[0]
+            if (d) setDemirbasAlt({ ad: d.ad, db_kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "", seri_no: d.seri_no ?? "", konum: d.konum ?? "", garanti_bitis: d.garanti_bitis ?? "", zimmet_kullanici_id: d.zimmet_kullanici_id ?? "", zimmet_tarihi: d.zimmet_tarihi ?? "", adet: String(d.adet ?? 1), ayriKaydet: false })
           })
       } else if (initialValues.tur === "gelir") {
         supabase.from("islem_stok").select("*").eq("islem_id", initialValues.id).eq("tur", "cikis").then(({ data }) => {
@@ -287,7 +300,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     }
   }
 
-  function setDA(field: keyof DemirbasAlt, value: string) {
+  function setDA(field: keyof DemirbasAlt, value: string | boolean) {
     setDemirbasAlt(prev => ({ ...prev, [field]: value }))
     if (field === "ad") {
       setForm(prev => ({ ...prev, aciklama: value ? `${value} alım` : "" }))
@@ -410,6 +423,11 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
       // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
       if (isDemirbasGider) {
+        const adet = Math.max(1, parseInt(demirbasAlt.adet) || 1)
+        // alis_fiyati BİRİM fiyattır; işlem tutarı grubun tamamını kapsar.
+        const birimFiyat = toplam / adet
+        const ayriKayitlar = demirbasAlt.ayriKaydet && adet > 1
+
         const demirbasPayload = {
           ad: demirbasAlt.ad,
           kategori: demirbasAlt.db_kategori,
@@ -420,17 +438,31 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           garanti_bitis: demirbasAlt.garanti_bitis || null,
           zimmet_kullanici_id: demirbasAlt.zimmet_kullanici_id || null,
           zimmet_tarihi: demirbasAlt.zimmet_tarihi || null,
-          alis_fiyati: toplam,
+          alis_fiyati: birimFiyat,
           alis_tarihi: form.tarih,
           durum: "aktif" as const,
           kaynak_islem_id: islemId,
           updated_at: new Date().toISOString(),
         }
         if (linkedDemirbasId) {
-          const { error: dbErr } = await supabase.from("demirbaslar").update(demirbasPayload).eq("id", linkedDemirbasId)
+          const { error: dbErr } = await supabase.from("demirbaslar")
+            .update({ ...demirbasPayload, adet: ayriKayitlar ? 1 : adet })
+            .eq("id", linkedDemirbasId)
+          if (dbErr) { setError(dbErr.message); return }
+        } else if (ayriKayitlar) {
+          // Her eşya ayrı satır: seri no / zimmet / durum tek tek izlenebilsin.
+          const { error: dbErr } = await supabase.from("demirbaslar").insert(
+            Array.from({ length: adet }, (_, i) => ({
+              ...demirbasPayload,
+              ad: `${demirbasAlt.ad} #${i + 1}`,
+              adet: 1,
+              sirket_id: aktifSirketId,
+            }))
+          )
           if (dbErr) { setError(dbErr.message); return }
         } else {
-          const { error: dbErr } = await supabase.from("demirbaslar").insert({ ...demirbasPayload, sirket_id: aktifSirketId })
+          const { error: dbErr } = await supabase.from("demirbaslar")
+            .insert({ ...demirbasPayload, adet, sirket_id: aktifSirketId })
           if (dbErr) { setError(dbErr.message); return }
         }
       }
@@ -739,9 +771,46 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               <div className="flex-1 border-t border-border" />
             </div>
 
+            {bagliDemirbasSayisi > 1 ? (
+              <div className="rounded-md bg-muted border px-3 py-2 text-xs text-muted-foreground">
+                Bu işlem <strong>{bagliDemirbasSayisi} ayrı demirbaş kaydı</strong> oluşturmuş.
+                Her birini Demirbaşlar sayfasından tek tek düzenleyebilirsin; buradan toplu düzenleme yapılamaz.
+              </div>
+            ) : (
+            <>
             <div className="space-y-1.5">
               <Label>Demirbaş Adı *</Label>
               <Input value={demirbasAlt.ad} onChange={e => setDA("ad", e.target.value)} placeholder="ör. MacBook Pro 14, Çalışma Masası" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Adet</Label>
+              <Input
+                type="number" min="1" step="1"
+                value={demirbasAlt.adet}
+                onChange={e => setDA("adet", e.target.value)}
+              />
+              {(parseInt(demirbasAlt.adet) || 1) > 1 && (
+                <>
+                  <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border mt-0.5"
+                      checked={demirbasAlt.ayriKaydet}
+                      onChange={e => setDA("ayriKaydet", e.target.checked)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Her birini ayrı kaydet — seri no, zimmet ve durumu tek tek izlemek için
+                      ({parseInt(demirbasAlt.adet) || 1} ayrı kayıt açılır)
+                    </span>
+                  </label>
+                  {form.tutar && (
+                    <p className="text-xs text-muted-foreground">
+                      Birim fiyat: {formatCurrency((parseFloat(form.tutar) || 0) / (parseInt(demirbasAlt.adet) || 1))}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -804,6 +873,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                 </div>
               </div>
             </div>
+            </>
+            )}
 
             <div className="relative flex items-center py-1">
               <div className="flex-1 border-t border-border" />

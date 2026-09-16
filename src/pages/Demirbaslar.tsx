@@ -29,7 +29,7 @@ interface KaynakIslem { tutar: number; tarih: string }
 type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
 
 const defaultForm = {
-  ad: "", kategori: "Bilgisayar", marka: "", model: "", seri_no: "",
+  ad: "", kategori: "Bilgisayar", marka: "", model: "", seri_no: "", adet: "1",
   alis_tarihi: "", alis_fiyati: "", konum: "", durum: "aktif" as Demirbase["durum"],
   zimmet_kullanici_id: "", zimmet_tarihi: "",
   garanti_bitis: "", son_bakim_tarihi: "", sonraki_bakim_tarihi: "", notlar: "",
@@ -68,11 +68,12 @@ export function Demirbaslar() {
 
   function openEdit(d: DemirbasRow) {
     setEditing(d)
-    const alisFiyati = d.kaynak_islem ? String(d.kaynak_islem.tutar) : (d.alis_fiyati != null ? String(d.alis_fiyati) : "")
+    // alis_fiyati BİRİM fiyattır; işlemin toplam tutarı adede bölünerek yazılır.
+    const alisFiyati = d.alis_fiyati != null ? String(d.alis_fiyati) : ""
     const alisTarihi = d.kaynak_islem ? d.kaynak_islem.tarih : (d.alis_tarihi ?? "")
     setForm({
       ad: d.ad, kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "",
-      seri_no: d.seri_no ?? "", alis_tarihi: alisTarihi,
+      seri_no: d.seri_no ?? "", adet: String(d.adet ?? 1), alis_tarihi: alisTarihi,
       alis_fiyati: alisFiyati,
       konum: d.konum ?? "", durum: d.durum,
       zimmet_kullanici_id: d.zimmet_kullanici_id ?? "",
@@ -92,6 +93,7 @@ export function Demirbaslar() {
       ad: form.ad, kategori: form.kategori,
       marka: form.marka || null, model: form.model || null,
       seri_no: form.seri_no || null,
+      adet: Math.max(1, parseInt(form.adet) || 1),
       alis_tarihi: form.alis_tarihi || null,
       alis_fiyati: form.alis_fiyati ? parseFloat(form.alis_fiyati) : null,
       konum: form.konum || null, durum: form.durum,
@@ -134,10 +136,9 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
-  const toplamDeger = kayitlar.reduce((s, d) => {
-    const fiyat = d.kaynak_islem?.tutar ?? d.alis_fiyati ?? 0
-    return s + fiyat
-  }, 0)
+  // alis_fiyati birim fiyat olduğundan grubun değeri adetle çarpılır.
+  const toplamDeger = kayitlar.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0)
+  const toplamAdet = kayitlar.reduce((s, d) => s + (d.adet ?? 1), 0)
   const garantiUyari = kayitlar.filter(d => d.garanti_bitis && d.garanti_bitis <= today && d.durum === "aktif").length
   const bakimUyari = kayitlar.filter(d => d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today && d.durum === "aktif").length
 
@@ -169,8 +170,11 @@ export function Demirbaslar() {
       {/* Özet */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card><CardContent className="p-4 text-center">
-          <p className="text-xs text-muted-foreground mb-1">Toplam Kayıt</p>
-          <p className="text-lg font-bold">{kayitlar.length}</p>
+          <p className="text-xs text-muted-foreground mb-1">Toplam Eşya</p>
+          <p className="text-lg font-bold">{toplamAdet}</p>
+          {toplamAdet !== kayitlar.length && (
+            <p className="text-[10px] text-muted-foreground">{kayitlar.length} kayıt</p>
+          )}
         </CardContent></Card>
         <Card><CardContent className="p-4 text-center">
           <p className="text-xs text-muted-foreground mb-1">Toplam Değer</p>
@@ -218,7 +222,7 @@ export function Demirbaslar() {
                 const zimmetli = kullaniciBul(d.zimmet_kullanici_id)
                 const garantiBitti = d.garanti_bitis && d.garanti_bitis <= today
                 const bakimGerekli = d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today
-                const fiyat = d.kaynak_islem?.tutar ?? d.alis_fiyati
+                const fiyat = d.alis_fiyati
                 const tarih = d.kaynak_islem?.tarih ?? d.alis_tarihi
 
                 return (
@@ -226,6 +230,9 @@ export function Demirbaslar() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm">{d.ad}</p>
+                        {(d.adet ?? 1) > 1 && (
+                          <Badge variant="secondary" className="text-xs">×{d.adet}</Badge>
+                        )}
                         <Badge variant={DURUM_VARIANT[d.durum]} className="text-xs">{DURUMLAR.find(x => x.value === d.durum)?.label}</Badge>
                         <Badge variant="outline" className="text-xs">{d.kategori}</Badge>
                         {d.kaynak_islem && <Badge variant="outline" className="text-xs text-blue-500 border-blue-200">Gider bağlı</Badge>}
@@ -255,7 +262,12 @@ export function Demirbaslar() {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {fiyat != null && (
-                        <p className="text-sm font-semibold mr-1">{formatCurrency(fiyat)}</p>
+                        <div className="text-right mr-1">
+                          <p className="text-sm font-semibold">{formatCurrency(fiyat * (d.adet ?? 1))}</p>
+                          {(d.adet ?? 1) > 1 && (
+                            <p className="text-[10px] text-muted-foreground">{formatCurrency(fiyat)} × {d.adet}</p>
+                          )}
+                        </div>
                       )}
                       {isAdmin && (
                         <>
@@ -337,9 +349,17 @@ export function Demirbaslar() {
                 <Input type="date" value={form.alis_tarihi} onChange={e => f("alis_tarihi", e.target.value)} disabled={!!editing?.kaynak_islem} />
               </div>
               <div className="space-y-1.5">
-                <Label>Alış Fiyatı (₺)</Label>
+                <Label>Birim Alış Fiyatı (₺)</Label>
                 <Input type="number" min="0" step="0.01" value={form.alis_fiyati} onChange={e => f("alis_fiyati", e.target.value)} placeholder="0.00" disabled={!!editing?.kaynak_islem} />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Adet</Label>
+              <Input type="number" min="1" step="1" value={form.adet} onChange={e => f("adet", e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                Aynı üründen birden fazlaysa tek kayıtta tutabilirsin. Toplam değer = birim fiyat × adet.
+                Her birinin seri no veya zimmetini ayrı izlemen gerekiyorsa adet 1 olan ayrı kayıtlar aç.
+              </p>
             </div>
 
             {/* Zimmet */}

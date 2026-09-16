@@ -99,7 +99,10 @@ export interface Demirbase {
   marka: string | null
   model: string | null
   seri_no: string | null
+  /** Bu satırın temsil ettiği eşya sayısı. Toplam değer = alis_fiyati * adet. */
+  adet: number
   alis_tarihi: string | null
+  /** BİRİM alış fiyatı (grubun tamamı değil). */
   alis_fiyati: number | null
   konum: string | null
   durum: "aktif" | "bakimda" | "hurda" | "devredildi"
