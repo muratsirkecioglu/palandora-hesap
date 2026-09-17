@@ -10,6 +10,15 @@
 -- Çözüm: islem_stok tek stok defteri olarak kalır ama kaynağı üç türlü olabilir.
 -- kaynak kolonu hangi tür olduğunu, CHECK kısıtı da ilgili bağlantının dolu
 -- olmasını garanti eder.
+--
+-- ÖN KOŞUL: v23 bu ortamda çalışmış olmalı (sirketler tablosu ve sirket_uyesi
+-- fonksiyonu gerekir). Kontrol:
+--   SELECT to_regclass('public.sirketler'), to_regproc('public.sirket_uyesi(uuid)');
+-- İkisi de null dönmemeli.
+--
+-- ÇALIŞTIRMA: Tamamını tek seferde çalıştır. Editörde metnin bir kısmı
+-- SEÇİLİYSE Supabase yalnızca seçili kısmı çalıştırır — seçimi kaldır.
+-- Sorun çıkarsa aşağıdaki 1/2/3 bölümlerini sırayla tek tek çalıştırabilirsin.
 
 -- ─────────────────────────────────────────────────────────────
 -- 1) Üretim kayıtları
