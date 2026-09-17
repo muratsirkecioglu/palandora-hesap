@@ -108,6 +108,8 @@ export function Finans() {
     const ids = new Set<string>()
     const mMap = new Map<string, number>()
     for (const s of allStok) {
+      // Üretim ve açılış hareketlerinin işlemi yoktur; işlem bazlı maliyete girmezler.
+      if (!s.islem_id) continue
       ids.add(s.islem_id)
       if (s.tur !== "cikis") continue
       mMap.set(s.islem_id, (mMap.get(s.islem_id) ?? 0) + s.miktar * s.birim_fiyat)

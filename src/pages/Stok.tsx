@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info, ChevronDown, ChevronRight } from "lucide-react"
+import { Pencil, Trash2, Loader2, AlertTriangle, FileCheck, FileX, Info, ChevronDown, ChevronRight, Plus } from "lucide-react"
 import { supabase, type Malzeme, type MalzemeWithStok } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSirket } from "@/contexts/SirketContext"
@@ -33,11 +33,13 @@ type CikisRow = {
 }
 
 type StokRow = {
-  islem_id: string
+  islem_id: string | null
   malzeme_id: string
   miktar: number
   tur: string
   birim_fiyat: number
+  kaynak: string
+  tarih: string | null
   islem: {
     tutar: number
     nakliye_tutari: number | null
@@ -65,13 +67,85 @@ export function Stok() {
   const [search, setSearch] = useState("")
   const [filterKat, setFilterKat] = useState("tumu")
 
+  // Satın almasız stok girişi (açılış stoğu) + yeni malzeme tanımı
+  const [girisOpen, setGirisOpen] = useState(false)
+  const [girisForm, setGirisForm] = useState({
+    malzeme_id: "", ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "",
+    miktar: "", birim_fiyat: "", tarih: new Date().toISOString().slice(0, 10),
+  })
+  const [girisSaving, setGirisSaving] = useState(false)
+  const [girisError, setGirisError] = useState<string | null>(null)
+  const yeniMalzeme = girisForm.malzeme_id === "yeni"
+
+  function openGiris() {
+    setGirisForm({
+      malzeme_id: "", ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "",
+      miktar: "", birim_fiyat: "", tarih: new Date().toISOString().slice(0, 10),
+    })
+    setGirisError(null)
+    setGirisOpen(true)
+  }
+
+  async function handleGirisSave() {
+    if (!girisForm.malzeme_id) { setGirisError("Malzeme seçin."); return }
+    if (yeniMalzeme && !girisForm.ad.trim()) { setGirisError("Malzeme adı zorunludur."); return }
+
+    const miktar = parseFloat(girisForm.miktar) || 0
+    if (!yeniMalzeme && miktar <= 0) {
+      setGirisError("Miktar sıfırdan büyük olmalıdır.")
+      return
+    }
+
+    setGirisSaving(true)
+    setGirisError(null)
+
+    try {
+      let malzemeId = girisForm.malzeme_id
+
+      if (yeniMalzeme) {
+        const { data, error } = await supabase.from("malzemeler").insert({
+          ad: girisForm.ad.trim(),
+          kategori: girisForm.kategori,
+          birim: girisForm.birim,
+          min_miktar: parseFloat(girisForm.min_miktar) || 0,
+          aciklama: "",
+          kullanici_id: user!.id,
+          sirket_id: aktifSirketId,
+        }).select("id").single()
+        if (error) { setGirisError(error.message); return }
+        malzemeId = data.id
+      }
+
+      // Miktar girilmediyse yalnızca malzeme tanımlanır, stok hareketi yazılmaz.
+      if (miktar > 0) {
+        const { error } = await supabase.from("islem_stok").insert({
+          malzeme_id: malzemeId,
+          miktar,
+          tur: "giris",
+          birim_fiyat: parseFloat(girisForm.birim_fiyat) || 0,
+          kaynak: "acilis",
+          tarih: girisForm.tarih,
+          sirket_id: aktifSirketId,
+        })
+        if (error) { setGirisError(error.message); return }
+      }
+
+      setGirisOpen(false)
+      load()
+    } catch (e) {
+      setGirisError(e instanceof Error ? e.message : "Beklenmeyen bir hata oluştu.")
+    } finally {
+      setGirisSaving(false)
+    }
+  }
+
   async function load() {
     if (!aktifSirketId) return
     setLoading(true)
     const [{ data: malzemeData }, { data: stokData }] = await Promise.all([
       supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("islem_stok")
-        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
+        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, kaynak, tarih, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
         .eq("sirket_id", aktifSirketId)
         .order("created_at", { ascending: false }),
     ])
@@ -90,11 +164,11 @@ export function Stok() {
         e.cikis += s.miktar
         const list = cikislar.get(s.malzeme_id) ?? []
         list.push({
-          tarih: s.islem?.tarih ?? "",
+          tarih: s.tarih ?? s.islem?.tarih ?? "",
           miktar: s.miktar,
           birim_fiyat: s.birim_fiyat,
-          aciklama: s.islem?.aciklama ?? "",
-          kategori: s.islem?.kategori ?? "",
+          aciklama: s.islem?.aciklama ?? (s.kaynak === "uretim" ? "Üretimde kullanıldı" : ""),
+          kategori: s.islem?.kategori ?? (s.kaynak === "uretim" ? "Üretim" : ""),
           faturali: s.islem?.faturali ?? false,
         })
         cikislar.set(s.malzeme_id, list)
@@ -181,14 +255,25 @@ export function Stok() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Stok Yönetimi</h1>
-        <p className="text-muted-foreground text-sm">Malzeme ve stok takibi</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Stok Yönetimi</h1>
+          <p className="text-muted-foreground text-sm">Malzeme ve stok takibi</p>
+        </div>
+        {isAdmin && (
+          <Button onClick={openGiris} size="sm">
+            <Plus className="h-4 w-4" /> Stok Girişi
+          </Button>
+        )}
       </div>
 
       <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
-        <p>Yeni malzeme eklemek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.</p>
+        <p>
+          Satın alma ile stok girmek için <strong>Finans → Yeni İşlem → Gider → Malzeme</strong> kategorisini kullanın.
+          Ürettiğiniz ürünler <strong>Üretim</strong> sayfasından girer. Yukarıdaki <strong>Stok Girişi</strong> ise
+          satın alma kaydı olmadan başlangıç stoğu tanımlamak içindir.
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -379,6 +464,118 @@ export function Stok() {
               <Button variant="outline" onClick={() => setDialogOpen(false)}>İptal</Button>
               <Button onClick={handleSave} disabled={saving}>
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Kaydet
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Satın almasız stok girişi */}
+      <Dialog open={girisOpen} onOpenChange={setGirisOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Stok Girişi</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Malzeme *</Label>
+              <Select
+                value={girisForm.malzeme_id}
+                onValueChange={v => { setGirisForm(f => ({ ...f, malzeme_id: v })); setGirisError(null) }}
+              >
+                <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yeni">+ Yeni malzeme tanımla</SelectItem>
+                  {malzemeler.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.ad} · {m.stok} {m.birim}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {yeniMalzeme && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Malzeme Adı *</Label>
+                  <Input
+                    value={girisForm.ad}
+                    onChange={e => { setGirisForm(f => ({ ...f, ad: e.target.value })); setGirisError(null) }}
+                    placeholder="ör. Halı kaynak bandı"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Kategori</Label>
+                    <Select value={girisForm.kategori} onValueChange={v => setGirisForm(f => ({ ...f, kategori: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Birim</Label>
+                    <Select value={girisForm.birim} onValueChange={v => setGirisForm(f => ({ ...f, birim: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Kritik Stok Seviyesi</Label>
+                  <Input
+                    type="number" min="0" step="0.001"
+                    value={girisForm.min_miktar}
+                    onChange={e => setGirisForm(f => ({ ...f, min_miktar: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Miktar{yeniMalzeme ? "" : " *"}</Label>
+                <Input
+                  type="number" min="0" step="0.001"
+                  value={girisForm.miktar}
+                  onChange={e => { setGirisForm(f => ({ ...f, miktar: e.target.value })); setGirisError(null) }}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Birim Maliyet (₺)</Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={girisForm.birim_fiyat}
+                  onChange={e => setGirisForm(f => ({ ...f, birim_fiyat: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Tarih</Label>
+              <Input
+                type="date" value={girisForm.tarih}
+                onChange={e => setGirisForm(f => ({ ...f, tarih: e.target.value }))}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Bu giriş bir satın alma kaydı oluşturmaz, yalnızca stoğa eklenir — gider olarak görünmez.
+              {yeniMalzeme && " Miktarı boş bırakırsan sadece malzeme tanımlanır."}
+            </p>
+
+            {girisError && <p className="text-sm text-destructive">{girisError}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setGirisOpen(false)}>İptal</Button>
+              <Button onClick={handleGirisSave} disabled={girisSaving}>
+                {girisSaving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Kaydet
               </Button>
             </div>

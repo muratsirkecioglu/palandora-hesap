@@ -9,6 +9,7 @@ import {
   Menu,
   X,
   Landmark,
+  Factory,
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/finans", icon: TrendingUp, label: "Finans" },
   { to: "/hesaplar", icon: Landmark, label: "Hesaplar" },
   { to: "/stok", icon: Package, label: "Stok" },
+  { to: "/uretim", icon: Factory, label: "Üretim" },
   { to: "/demirbaslar", icon: Building2, label: "Demirbaşlar" },
 ]
 

@@ -80,10 +80,28 @@ export interface Odeme {
   created_at: string
 }
 
+export interface Uretim {
+  id: string
+  sirket_id: string
+  tarih: string
+  /** Üretilen ürün. */
+  malzeme_id: string
+  miktar: number
+  iscilik_tutari: number
+  adam_saat: number | null
+  aciklama: string | null
+  kullanici_id: string | null
+  created_at: string
+}
+
 export interface IslemStok {
   id: string
   sirket_id: string
-  islem_id: string
+  /** Alış/satış hareketiyse dolu; üretim ve açılış stoğunda null. */
+  islem_id: string | null
+  uretim_id: string | null
+  kaynak: "islem" | "uretim" | "acilis"
+  tarih: string | null
   malzeme_id: string
   miktar: number
   tur: "giris" | "cikis"

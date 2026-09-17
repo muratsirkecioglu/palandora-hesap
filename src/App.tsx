@@ -6,6 +6,7 @@ import { Login } from "@/pages/Login"
 import { Dashboard } from "@/pages/Dashboard"
 import { Finans } from "@/pages/Finans"
 import { Stok } from "@/pages/Stok"
+import { Uretim } from "@/pages/Uretim"
 import { Kullanicilar } from "@/pages/Kullanicilar"
 import { Demirbaslar } from "@/pages/Demirbaslar"
 import { Hesaplar } from "@/pages/Hesaplar"
@@ -32,6 +33,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="finans" element={<Finans />} />
         <Route path="stok" element={<Stok />} />
+        <Route path="uretim" element={<Uretim />} />
         <Route path="demirbaslar" element={<Demirbaslar />} />
         <Route path="hesaplar" element={<Hesaplar />} />
         <Route path="kullanicilar" element={<AdminRoute><Kullanicilar /></AdminRoute>} />
