@@ -40,7 +40,7 @@ type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
 
 const defaultForm = {
   ad: "", kategori: "Bilgisayar", marka: "", model: "", seri_no: "", adet: "1",
-  grup_id: "", ayriKaydet: false,
+  grup_id: "", grup_adi: "", ayriKaydet: false,
   alis_tarihi: "", alis_fiyati: "", konum: "", durum: "aktif" as Demirbase["durum"],
   zimmet_kullanici_id: "", zimmet_tarihi: "",
   garanti_bitis: "", son_bakim_tarihi: "", sonraki_bakim_tarihi: "", notlar: "",
@@ -54,8 +54,12 @@ export function Demirbaslar() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [satisDemirbas, setSatisDemirbas] = useState<DemirbasRow | null>(null)
   const [gruplar, setGruplar] = useState<DemirbasGrubu[]>([])
-  const [grupDialogOpen, setGrupDialogOpen] = useState(false)
-  const [grupForm, setGrupForm] = useState({ ad: "", tarih: "", aciklama: "" })
+  const [duzenlenenGrup, setDuzenlenenGrup] = useState<{ grup: DemirbasGrubu; items: DemirbasRow[] } | null>(null)
+  const [grupForm, setGrupForm] = useState({
+    ad: "", tarih: "", adet: "1",
+    ekipmanAd: "", kategori: "Bilgisayar", marka: "", model: "", konum: "",
+    alis_fiyati: "", garanti_bitis: "",
+  })
   const [grupSaving, setGrupSaving] = useState(false)
   const [grupError, setGrupError] = useState<string | null>(null)
   // Kapalı olanları tutuyoruz ki yeni/yeniden adlandırılan gruplar açık gelsin.
@@ -98,7 +102,7 @@ export function Demirbaslar() {
     setForm({
       ad: d.ad, kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "",
       seri_no: d.seri_no ?? "", adet: String(d.adet ?? 1),
-      grup_id: d.grup_id ?? "", ayriKaydet: false,
+      grup_id: d.grup_id ?? "", grup_adi: "", ayriKaydet: false,
       alis_tarihi: alisTarihi,
       alis_fiyati: alisFiyati,
       konum: d.konum ?? "", durum: d.durum,
@@ -134,6 +138,18 @@ export function Demirbaslar() {
       notlar: form.notlar || null,
       updated_at: new Date().toISOString(),
     }
+    // Grup adı verildiyse bu giriş için yeni bir parti oluşturulur.
+    if (!editing && form.grup_adi.trim()) {
+      const { data: g, error: gErr } = await supabase.from("demirbas_gruplari").insert({
+        sirket_id: aktifSirketId,
+        ad: form.grup_adi.trim(),
+        tarih: form.alis_tarihi || null,
+        ayri_kayit: ayriKayitlar,
+      }).select("id").single()
+      if (gErr) { setSaving(false); alert("Grup oluşturulamadı: " + gErr.message); return }
+      payload.grup_id = g.id
+    }
+
     if (editing) {
       await supabase.from("demirbaslar").update(payload).eq("id", editing.id)
     } else if (ayriKayitlar) {
@@ -154,22 +170,111 @@ export function Demirbaslar() {
     load()
   }
 
+  function openGrupEdit(grup: DemirbasGrubu, items: DemirbasRow[]) {
+    const ilk = items[0]
+    const mevcutAdet = grup.ayri_kayit ? items.length : (ilk?.adet ?? 1)
+    setDuzenlenenGrup({ grup, items })
+    setGrupForm({
+      ad: grup.ad,
+      tarih: grup.tarih ?? "",
+      adet: String(mevcutAdet),
+      ekipmanAd: ilk ? cinsAdi(ilk.ad) : "",
+      kategori: ilk?.kategori ?? "Bilgisayar",
+      marka: ilk?.marka ?? "",
+      model: ilk?.model ?? "",
+      konum: ilk?.konum ?? "",
+      alis_fiyati: ilk?.alis_fiyati != null ? String(ilk.alis_fiyati) : "",
+      garanti_bitis: ilk?.garanti_bitis ?? "",
+    })
+    setGrupError(null)
+  }
+
+  /**
+   * Partiyi yeniden düzenler: ortak alanlar üyelere yazılır, adet fazlaysa
+   * kayıt silinir, eksikse kayıt eklenir.
+   * Seri no, zimmet, durum ve bakım alanları eşyaya özeldir — korunur.
+   */
   async function handleGrupSave() {
+    if (!duzenlenenGrup) return
     if (!grupForm.ad.trim()) { setGrupError("Grup adı zorunludur."); return }
+    const hedefAdet = Math.max(1, parseInt(grupForm.adet) || 1)
+    const { grup, items } = duzenlenenGrup
+
     setGrupSaving(true)
     setGrupError(null)
-    const { data, error } = await supabase.from("demirbas_gruplari").insert({
-      sirket_id: aktifSirketId,
-      ad: grupForm.ad.trim(),
-      tarih: grupForm.tarih || null,
-      aciklama: grupForm.aciklama || null,
-    }).select("*").single()
-    setGrupSaving(false)
-    if (error) { setGrupError(error.message); return }
-    setGruplar(p => [data as DemirbasGrubu, ...p])
-    // Yeni grup, açık olan demirbaş formunda seçili gelsin.
-    setForm(f => ({ ...f, grup_id: data.id }))
-    setGrupDialogOpen(false)
+
+    try {
+      const { error: gErr } = await supabase.from("demirbas_gruplari").update({
+        ad: grupForm.ad.trim(),
+        tarih: grupForm.tarih || null,
+      }).eq("id", grup.id)
+      if (gErr) { setGrupError(gErr.message); return }
+
+      // Üyelere yazılacak ortak alanlar
+      const ortak = {
+        kategori: grupForm.kategori,
+        marka: grupForm.marka || null,
+        model: grupForm.model || null,
+        konum: grupForm.konum || null,
+        alis_fiyati: grupForm.alis_fiyati ? parseFloat(grupForm.alis_fiyati) : null,
+        alis_tarihi: grupForm.tarih || null,
+        garanti_bitis: grupForm.garanti_bitis || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      let kalanlar = [...items]
+
+      if (grup.ayri_kayit) {
+        const fazla = items.length - hedefAdet
+        if (fazla > 0) {
+          // Önce üzerinde çalışılmamış olanları sil (seri no / zimmet yoksa), sonra en yeniler.
+          const silinecek = [...items].sort((a, b) => {
+            const aIz = (a.seri_no ? 1 : 0) + (a.zimmet_kullanici_id ? 1 : 0)
+            const bIz = (b.seri_no ? 1 : 0) + (b.zimmet_kullanici_id ? 1 : 0)
+            if (aIz !== bIz) return aIz - bIz
+            return (b.created_at ?? "").localeCompare(a.created_at ?? "")
+          }).slice(0, fazla)
+          const { error } = await supabase.from("demirbaslar").delete().in("id", silinecek.map(d => d.id))
+          if (error) { setGrupError(error.message); return }
+          const silinenId = new Set(silinecek.map(d => d.id))
+          kalanlar = items.filter(d => !silinenId.has(d.id))
+        } else if (fazla < 0) {
+          const eklenecek = Array.from({ length: -fazla }, () => ({
+            ...ortak,
+            ad: grupForm.ekipmanAd,
+            adet: 1,
+            durum: "aktif" as const,
+            grup_id: grup.id,
+            sirket_id: aktifSirketId,
+          }))
+          const { error } = await supabase.from("demirbaslar").insert(eklenecek)
+          if (error) { setGrupError(error.message); return }
+        }
+
+        // Kalanları güncelle ve yeniden numaralandır
+        for (let i = 0; i < kalanlar.length; i++) {
+          const { error } = await supabase.from("demirbaslar")
+            .update({ ...ortak, ad: `${grupForm.ekipmanAd} #${i + 1}`, adet: 1 })
+            .eq("id", kalanlar[i].id)
+          if (error) { setGrupError(error.message); return }
+        }
+      } else {
+        // Tek kayıtlı parti: adet doğrudan kaydın adet alanıdır.
+        for (const d of items) {
+          const { error } = await supabase.from("demirbaslar")
+            .update({ ...ortak, ad: grupForm.ekipmanAd, adet: hedefAdet })
+            .eq("id", d.id)
+          if (error) { setGrupError(error.message); return }
+        }
+      }
+
+      setDuzenlenenGrup(null)
+      load()
+    } catch (e) {
+      setGrupError(e instanceof Error ? e.message : "Beklenmeyen bir hata oluştu.")
+    } finally {
+      setGrupSaving(false)
+    }
   }
 
   function grupAcKapa(anahtar: string) {
@@ -460,14 +565,23 @@ export function Demirbaslar() {
                                     {esyaSayisi(items)} eşya · {formatCurrency(toplamTutar(items))}
                                   </span>
                                   {isAdmin && grup && (
-                                    <Button
-                                      variant="ghost" size="icon"
-                                      className="h-6 w-6 text-destructive hover:text-destructive"
-                                      title="Grubu sil"
-                                      onClick={() => setSilinecekGrup({ grup, adet: items.length })}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <>
+                                      <Button
+                                        variant="ghost" size="icon" className="h-6 w-6"
+                                        title="Grubu düzenle"
+                                        onClick={() => openGrupEdit(grup, items)}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost" size="icon"
+                                        className="h-6 w-6 text-destructive hover:text-destructive"
+                                        title="Grubu sil"
+                                        onClick={() => setSilinecekGrup({ grup, adet: items.length })}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -664,31 +778,20 @@ export function Demirbaslar() {
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Grup</Label>
-              <div className="flex gap-2">
-                <Select value={form.grup_id || "yok"} onValueChange={v => f("grup_id", v === "yok" ? "" : v)}>
-                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yok">— Gruplanmamış —</SelectItem>
-                    {gruplar.map(g => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.ad}{g.tarih ? ` · ${formatDate(g.tarih)}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline" size="icon" className="shrink-0" title="Yeni grup"
-                  onClick={() => { setGrupForm({ ad: "", tarih: "", aciklama: "" }); setGrupError(null); setGrupDialogOpen(true) }}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+            {/* Grup, bu girişe ait bir partidir; mevcut bir gruba ekleme yapılmaz. */}
+            {!editing && (
+              <div className="space-y-1.5">
+                <Label>Grup Adı (isteğe bağlı)</Label>
+                <Input
+                  value={form.grup_adi}
+                  onChange={e => f("grup_adi", e.target.value)}
+                  placeholder='ör. "Başlangıç Demirbaş Listesi", "12.03.2026 Alımı"'
+                />
+                <p className="text-xs text-muted-foreground">
+                  Bu giriş için yeni bir grup oluşturulur. Boş bırakırsan kayıtlar gruplanmamış kalır.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                ör. "Başlangıç Demirbaş Listesi", "12.03.2026 Alımı"
-              </p>
-            </div>
+            )}
 
             {/* Zimmet */}
             <div className="space-y-3 border border-border rounded-lg p-3">
@@ -788,35 +891,127 @@ export function Demirbaslar() {
         </DialogContent>
       </Dialog>
 
-      {/* Yeni grup */}
-      <Dialog open={grupDialogOpen} onOpenChange={setGrupDialogOpen}>
-        <DialogContent className="max-w-sm">
+      {/* Parti (grup) düzenleme */}
+      <Dialog open={!!duzenlenenGrup} onOpenChange={o => !o && setDuzenlenenGrup(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Yeni Demirbaş Grubu</DialogTitle>
+            <DialogTitle>Grubu Düzenle</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Grup Adı *</Label>
+                <Input
+                  value={grupForm.ad}
+                  onChange={e => { setGrupForm(g => ({ ...g, ad: e.target.value })); setGrupError(null) }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Alış Tarihi</Label>
+                <Input type="date" value={grupForm.tarih} onChange={e => setGrupForm(g => ({ ...g, tarih: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="relative flex items-center gap-2 py-1">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-xs text-muted-foreground shrink-0">Ekipman Bilgisi</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+
             <div className="space-y-1.5">
-              <Label>Grup Adı *</Label>
+              <Label>Ekipman Adı *</Label>
               <Input
-                value={grupForm.ad}
-                onChange={e => { setGrupForm(g => ({ ...g, ad: e.target.value })); setGrupError(null) }}
-                placeholder="ör. Başlangıç Demirbaş Listesi"
+                value={grupForm.ekipmanAd}
+                onChange={e => { setGrupForm(g => ({ ...g, ekipmanAd: e.target.value })); setGrupError(null) }}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Tarih (isteğe bağlı)</Label>
-              <Input type="date" value={grupForm.tarih} onChange={e => setGrupForm(g => ({ ...g, tarih: e.target.value }))} />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Kategori</Label>
+                <Select value={grupForm.kategori} onValueChange={v => setGrupForm(g => ({ ...g, kategori: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Adet</Label>
+                <Input
+                  type="number" min="1" step="1"
+                  value={grupForm.adet}
+                  onChange={e => { setGrupForm(g => ({ ...g, adet: e.target.value })); setGrupError(null) }}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Açıklama (isteğe bağlı)</Label>
-              <Input value={grupForm.aciklama} onChange={e => setGrupForm(g => ({ ...g, aciklama: e.target.value }))} placeholder="Notlar..." />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Marka</Label>
+                <Input value={grupForm.marka} onChange={e => setGrupForm(g => ({ ...g, marka: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Model</Label>
+                <Input value={grupForm.model} onChange={e => setGrupForm(g => ({ ...g, model: e.target.value }))} />
+              </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Birim Alış Fiyatı (₺)</Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={grupForm.alis_fiyati}
+                  onChange={e => setGrupForm(g => ({ ...g, alis_fiyati: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Konum</Label>
+                <Input value={grupForm.konum} onChange={e => setGrupForm(g => ({ ...g, konum: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Garanti Bitiş</Label>
+              <Input type="date" value={grupForm.garanti_bitis} onChange={e => setGrupForm(g => ({ ...g, garanti_bitis: e.target.value }))} />
+            </div>
+
+            {duzenlenenGrup && (() => {
+              const mevcut = duzenlenenGrup.grup.ayri_kayit
+                ? duzenlenenGrup.items.length
+                : (duzenlenenGrup.items[0]?.adet ?? 1)
+              const hedef = Math.max(1, parseInt(grupForm.adet) || 1)
+              const fark = hedef - mevcut
+              return (
+                <div className="rounded-md border border-border px-3 py-2 text-xs space-y-1">
+                  <p className="text-muted-foreground">
+                    Ortak alanlar gruptaki tüm kayıtlara yazılır.
+                    Seri no, zimmet, durum ve bakım bilgileri eşyaya özel olduğu için korunur.
+                  </p>
+                  {duzenlenenGrup.grup.ayri_kayit && fark !== 0 && (
+                    <p className={fark < 0 ? "text-destructive font-medium" : "text-green-600 font-medium"}>
+                      {fark < 0
+                        ? `${-fark} kayıt silinecek (önce seri no / zimmet girilmemiş olanlar).`
+                        : `${fark} yeni kayıt eklenecek.`}
+                    </p>
+                  )}
+                  {!duzenlenenGrup.grup.ayri_kayit && (
+                    <p className="text-muted-foreground">
+                      Bu grup tek kayıtlı; adet değişikliği kaydın adedini günceller.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
+
             {grupError && <p className="text-sm text-destructive">{grupError}</p>}
+
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" onClick={() => setGrupDialogOpen(false)}>İptal</Button>
-              <Button onClick={handleGrupSave} disabled={grupSaving || !grupForm.ad.trim()}>
+              <Button variant="outline" onClick={() => setDuzenlenenGrup(null)}>İptal</Button>
+              <Button onClick={handleGrupSave} disabled={grupSaving || !grupForm.ad.trim() || !grupForm.ekipmanAd.trim()}>
                 {grupSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                Oluştur
+                Kaydet
               </Button>
             </div>
           </div>

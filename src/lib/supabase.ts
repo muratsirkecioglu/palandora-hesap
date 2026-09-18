@@ -113,6 +113,8 @@ export interface DemirbasGrubu {
   id: string
   sirket_id: string
   ad: string
+  /** Parti "her birini ayrı kaydet" ile mi oluşturuldu? Adet eşitlemesini belirler. */
+  ayri_kayit: boolean
   tarih: string | null
   aciklama: string | null
   kullanici_id: string | null
