@@ -30,6 +30,11 @@ const DURUM_VARIANT: Record<string, "success" | "warning" | "destructive" | "out
 /** Artık elde olmayan demirbaşlar — envanter toplamlarına girmez. */
 const ELDEN_CIKAN = ["satildi", "hurda", "devredildi"]
 
+/** Ayrı kaydedilen eşyalardaki "#N" ekini atar: "Sandalye #3" → "Sandalye" */
+function cinsAdi(ad: string) {
+  return ad.replace(/\s*#\d+\s*$/, "").trim() || ad
+}
+
 interface KaynakIslem { tutar: number; tarih: string }
 type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
 
@@ -53,6 +58,9 @@ export function Demirbaslar() {
   const [grupForm, setGrupForm] = useState({ ad: "", tarih: "", aciklama: "" })
   const [grupSaving, setGrupSaving] = useState(false)
   const [grupError, setGrupError] = useState<string | null>(null)
+  const [grupMod, setGrupMod] = useState<"grup" | "cins" | "kategori">("grup")
+  const [silinecekGrup, setSilinecekGrup] = useState<{ grup: DemirbasGrubu; adet: number } | null>(null)
+  const [grupSiliniyor, setGrupSiliniyor] = useState(false)
   const [editing, setEditing] = useState<DemirbasRow | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
@@ -163,6 +171,31 @@ export function Demirbaslar() {
     setGrupDialogOpen(false)
   }
 
+  /** Yalnızca grubu siler; demirbaşlar "Gruplanmamış"a düşer (FK ON DELETE SET NULL). */
+  async function grubuSil() {
+    if (!silinecekGrup) return
+    setGrupSiliniyor(true)
+    const { error } = await supabase.from("demirbas_gruplari").delete().eq("id", silinecekGrup.grup.id)
+    setGrupSiliniyor(false)
+    if (error) { alert("Silme hatası: " + error.message); return }
+    setSilinecekGrup(null)
+    load()
+  }
+
+  /** Grubu ve içindeki tüm demirbaşları siler. */
+  async function grubuVeKayitlariSil() {
+    if (!silinecekGrup) return
+    setGrupSiliniyor(true)
+    // Demirbaş silme trigger'ı bağlı alış işlemini de siler (fn_demirbaş_sil_islem).
+    const { error: dErr } = await supabase.from("demirbaslar").delete().eq("grup_id", silinecekGrup.grup.id)
+    if (dErr) { setGrupSiliniyor(false); alert("Silme hatası: " + dErr.message); return }
+    const { error } = await supabase.from("demirbas_gruplari").delete().eq("id", silinecekGrup.grup.id)
+    setGrupSiliniyor(false)
+    if (error) { alert("Grup silinemedi: " + error.message); return }
+    setSilinecekGrup(null)
+    load()
+  }
+
   async function handleDelete(d: DemirbasRow) {
     const msg = d.kaynak_islem
       ? "Bu demirbaşı silmek istediğinize emin misiniz?\nBağlı gider kaydı da silinecektir."
@@ -184,18 +217,36 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
-  // Grup bazlı gösterim: gruplanmamışlar en sona düşer.
+  // Seçilen moda göre gösterim. Cins, ayrı kaydedilen eşyalardaki "#N" ekini
+  // atarak bulunur; böylece "Sandalye #1..#10" ve sonraki "Sandalye" alımları
+  // aynı cins altında toplanır.
   const gruplanmis = (() => {
+    if (grupMod === "grup") {
+      const map = new Map<string, DemirbasRow[]>()
+      for (const d of filtered) {
+        const key = d.grup_id ?? ""
+        map.set(key, [...(map.get(key) ?? []), d])
+      }
+      const siraliGruplar = gruplar
+        .filter(g => map.has(g.id))
+        .map(g => ({ baslik: g.ad, tarih: g.tarih, grup: g as DemirbasGrubu | null, items: map.get(g.id)! }))
+      const gruplanmamis = map.get("")
+      return gruplanmamis
+        ? [...siraliGruplar, { baslik: "Gruplanmamış", tarih: null, grup: null, items: gruplanmamis }]
+        : siraliGruplar
+    }
+
+    const anahtar = (d: DemirbasRow) =>
+      grupMod === "kategori" ? d.kategori : cinsAdi(d.ad)
+
     const map = new Map<string, DemirbasRow[]>()
     for (const d of filtered) {
-      const key = d.grup_id ?? ""
+      const key = anahtar(d)
       map.set(key, [...(map.get(key) ?? []), d])
     }
-    const siraliGruplar = gruplar
-      .filter(g => map.has(g.id))
-      .map(g => ({ grup: g as DemirbasGrubu | null, items: map.get(g.id)! }))
-    const gruplanmamis = map.get("")
-    return gruplanmamis ? [...siraliGruplar, { grup: null, items: gruplanmamis }] : siraliGruplar
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "tr"))
+      .map(([baslik, items]) => ({ baslik, tarih: null, grup: null as DemirbasGrubu | null, items }))
   })()
 
   // Envanter toplamları yalnızca elde olan demirbaşları kapsar.
@@ -286,6 +337,14 @@ export function Demirbaslar() {
                 {DURUMLAR.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={grupMod} onValueChange={v => setGrupMod(v as typeof grupMod)}>
+              <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="grup">Gruba göre</SelectItem>
+                <SelectItem value="cins">Cinse göre</SelectItem>
+                <SelectItem value="kategori">Kategoriye göre</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>
@@ -295,21 +354,33 @@ export function Demirbaslar() {
             <p className="text-center text-muted-foreground py-12 text-sm">Demirbaş bulunamadı</p>
           ) : (
             <div className="space-y-5">
-              {gruplanmis.map(({ grup, items }) => (
-                <div key={grup?.id ?? "gruplanmamis"}>
-                  {/* Grup başlığı yalnızca tanımlı grup varsa anlamlı */}
-                  {gruplar.length > 0 && (
+              {gruplanmis.map(({ baslik, tarih, grup, items }) => (
+                <div key={grup?.id ?? baslik}>
+                  {/* Gruba göre modda grup tanımlı değilse başlık göstermeye gerek yok */}
+                  {(grupMod !== "grup" || gruplar.length > 0) && (
                     <div className="flex items-center justify-between gap-2 pb-1.5 mb-1 border-b border-border">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-semibold truncate">{grup?.ad ?? "Gruplanmamış"}</span>
-                        {grup?.tarih && (
-                          <span className="text-xs text-muted-foreground shrink-0">{formatDate(grup.tarih)}</span>
+                        <span className="text-sm font-semibold truncate">{baslik}</span>
+                        {tarih && (
+                          <span className="text-xs text-muted-foreground shrink-0">{formatDate(tarih)}</span>
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {items.reduce((s, d) => s + (d.adet ?? 1), 0)} eşya ·{" "}
-                        {formatCurrency(items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0))}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">
+                          {items.reduce((s, d) => s + (d.adet ?? 1), 0)} eşya ·{" "}
+                          {formatCurrency(items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0))}
+                        </span>
+                        {isAdmin && grup && (
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            title="Grubu sil"
+                            onClick={() => setSilinecekGrup({ grup, adet: items.length })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
                   <div className="divide-y divide-border">
@@ -574,6 +645,48 @@ export function Demirbaslar() {
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Kaydet
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grup silme — iki farklı sonuç olduğu için onay kutusu yerine dialog */}
+      <Dialog open={!!silinecekGrup} onOpenChange={o => !o && setSilinecekGrup(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Grubu Sil</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm">
+              <strong>{silinecekGrup?.grup.ad}</strong> grubunda {silinecekGrup?.adet} kayıt var.
+              Ne yapmak istiyorsun?
+            </p>
+
+            <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+              Kayıtları da silersen, satın almadan gelen demirbaşların <strong>bağlı gider işlemleri de silinir</strong> —
+              bu işlem geri alınamaz.
+            </div>
+
+            <div className="space-y-2">
+              <Button
+                variant="outline" className="w-full justify-start"
+                disabled={grupSiliniyor}
+                onClick={grubuSil}
+              >
+                Sadece grubu sil — kayıtlar "Gruplanmamış"a düşer
+              </Button>
+              <Button
+                variant="destructive" className="w-full justify-start"
+                disabled={grupSiliniyor}
+                onClick={grubuVeKayitlariSil}
+              >
+                {grupSiliniyor && <Loader2 className="h-4 w-4 animate-spin" />}
+                Grubu ve {silinecekGrup?.adet} kaydı birlikte sil
+              </Button>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <Button variant="ghost" onClick={() => setSilinecekGrup(null)}>İptal</Button>
             </div>
           </div>
         </DialogContent>
