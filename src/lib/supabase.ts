@@ -109,9 +109,21 @@ export interface IslemStok {
   created_at: string
 }
 
+export interface DemirbasGrubu {
+  id: string
+  sirket_id: string
+  ad: string
+  tarih: string | null
+  aciklama: string | null
+  kullanici_id: string | null
+  created_at: string
+}
+
 export interface Demirbase {
   id: string
   sirket_id: string
+  /** Adlandırılmış demirbaş listesi; null ise gruplanmamış. */
+  grup_id: string | null
   ad: string
   kategori: string
   marka: string | null

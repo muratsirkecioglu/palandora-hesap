@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info, Banknote } from "lucide-react"
-import { supabase, type Demirbase, type AppUser } from "@/lib/supabase"
+import { supabase, type Demirbase, type AppUser, type DemirbasGrubu } from "@/lib/supabase"
 import { useSirket } from "@/contexts/SirketContext"
 import { DemirbasSatisDialog } from "./DemirbasSatisDialog"
 import { Button } from "@/components/ui/button"
@@ -35,6 +35,7 @@ type DemirbasRow = Demirbase & { kaynak_islem: KaynakIslem | null }
 
 const defaultForm = {
   ad: "", kategori: "Bilgisayar", marka: "", model: "", seri_no: "", adet: "1",
+  grup_id: "", ayriKaydet: false,
   alis_tarihi: "", alis_fiyati: "", konum: "", durum: "aktif" as Demirbase["durum"],
   zimmet_kullanici_id: "", zimmet_tarihi: "",
   garanti_bitis: "", son_bakim_tarihi: "", sonraki_bakim_tarihi: "", notlar: "",
@@ -47,6 +48,11 @@ export function Demirbaslar() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [satisDemirbas, setSatisDemirbas] = useState<DemirbasRow | null>(null)
+  const [gruplar, setGruplar] = useState<DemirbasGrubu[]>([])
+  const [grupDialogOpen, setGrupDialogOpen] = useState(false)
+  const [grupForm, setGrupForm] = useState({ ad: "", tarih: "", aciklama: "" })
+  const [grupSaving, setGrupSaving] = useState(false)
+  const [grupError, setGrupError] = useState<string | null>(null)
   const [editing, setEditing] = useState<DemirbasRow | null>(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
@@ -57,10 +63,13 @@ export function Demirbaslar() {
   async function load() {
     if (!aktifSirketId) return
     setLoading(true)
-    const [{ data: db }, { data: ku }] = await Promise.all([
+    const [{ data: db }, { data: ku }, { data: gr }] = await Promise.all([
       supabase.from("demirbaslar").select("*, kaynak_islem:islemler!kaynak_islem_id(tutar, tarih)").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("kullanicilar").select("*").eq("aktif", true).order("ad_soyad"),
+      supabase.from("demirbas_gruplari").select("*").eq("sirket_id", aktifSirketId)
+        .order("tarih", { ascending: false, nullsFirst: false }).order("ad"),
     ])
+    setGruplar((gr ?? []) as DemirbasGrubu[])
     setKayitlar((db ?? []) as DemirbasRow[])
     setKullanicilar((ku ?? []) as AppUser[])
     setLoading(false)
@@ -79,7 +88,9 @@ export function Demirbaslar() {
     const alisTarihi = d.kaynak_islem ? d.kaynak_islem.tarih : (d.alis_tarihi ?? "")
     setForm({
       ad: d.ad, kategori: d.kategori, marka: d.marka ?? "", model: d.model ?? "",
-      seri_no: d.seri_no ?? "", adet: String(d.adet ?? 1), alis_tarihi: alisTarihi,
+      seri_no: d.seri_no ?? "", adet: String(d.adet ?? 1),
+      grup_id: d.grup_id ?? "", ayriKaydet: false,
+      alis_tarihi: alisTarihi,
       alis_fiyati: alisFiyati,
       konum: d.konum ?? "", durum: d.durum,
       zimmet_kullanici_id: d.zimmet_kullanici_id ?? "",
@@ -95,11 +106,14 @@ export function Demirbaslar() {
   async function handleSave() {
     if (!form.ad) return
     setSaving(true)
+    const adet = Math.max(1, parseInt(form.adet) || 1)
+    const ayriKayitlar = !editing && form.ayriKaydet && adet > 1
     const payload = {
       ad: form.ad, kategori: form.kategori,
       marka: form.marka || null, model: form.model || null,
       seri_no: form.seri_no || null,
-      adet: Math.max(1, parseInt(form.adet) || 1),
+      adet,
+      grup_id: form.grup_id || null,
       alis_tarihi: form.alis_tarihi || null,
       alis_fiyati: form.alis_fiyati ? parseFloat(form.alis_fiyati) : null,
       konum: form.konum || null, durum: form.durum,
@@ -113,12 +127,40 @@ export function Demirbaslar() {
     }
     if (editing) {
       await supabase.from("demirbaslar").update(payload).eq("id", editing.id)
+    } else if (ayriKayitlar) {
+      // Her eşya ayrı satır: seri no / zimmet / durum tek tek izlenebilsin.
+      await supabase.from("demirbaslar").insert(
+        Array.from({ length: adet }, (_, i) => ({
+          ...payload,
+          ad: `${form.ad} #${i + 1}`,
+          adet: 1,
+          sirket_id: aktifSirketId,
+        }))
+      )
     } else {
       await supabase.from("demirbaslar").insert({ ...payload, sirket_id: aktifSirketId })
     }
     setSaving(false)
     setDialogOpen(false)
     load()
+  }
+
+  async function handleGrupSave() {
+    if (!grupForm.ad.trim()) { setGrupError("Grup adı zorunludur."); return }
+    setGrupSaving(true)
+    setGrupError(null)
+    const { data, error } = await supabase.from("demirbas_gruplari").insert({
+      sirket_id: aktifSirketId,
+      ad: grupForm.ad.trim(),
+      tarih: grupForm.tarih || null,
+      aciklama: grupForm.aciklama || null,
+    }).select("*").single()
+    setGrupSaving(false)
+    if (error) { setGrupError(error.message); return }
+    setGruplar(p => [data as DemirbasGrubu, ...p])
+    // Yeni grup, açık olan demirbaş formunda seçili gelsin.
+    setForm(f => ({ ...f, grup_id: data.id }))
+    setGrupDialogOpen(false)
   }
 
   async function handleDelete(d: DemirbasRow) {
@@ -141,6 +183,20 @@ export function Demirbaslar() {
     const matchDurum = filterDurum === "tumu" || d.durum === filterDurum
     return matchSearch && matchKat && matchDurum
   })
+
+  // Grup bazlı gösterim: gruplanmamışlar en sona düşer.
+  const gruplanmis = (() => {
+    const map = new Map<string, DemirbasRow[]>()
+    for (const d of filtered) {
+      const key = d.grup_id ?? ""
+      map.set(key, [...(map.get(key) ?? []), d])
+    }
+    const siraliGruplar = gruplar
+      .filter(g => map.has(g.id))
+      .map(g => ({ grup: g as DemirbasGrubu | null, items: map.get(g.id)! }))
+    const gruplanmamis = map.get("")
+    return gruplanmamis ? [...siraliGruplar, { grup: null, items: gruplanmamis }] : siraliGruplar
+  })()
 
   // Envanter toplamları yalnızca elde olan demirbaşları kapsar.
   // alis_fiyati birim fiyat olduğundan grubun değeri adetle çarpılır.
@@ -238,8 +294,26 @@ export function Demirbaslar() {
           ) : filtered.length === 0 ? (
             <p className="text-center text-muted-foreground py-12 text-sm">Demirbaş bulunamadı</p>
           ) : (
-            <div className="divide-y divide-border">
-              {filtered.map(d => {
+            <div className="space-y-5">
+              {gruplanmis.map(({ grup, items }) => (
+                <div key={grup?.id ?? "gruplanmamis"}>
+                  {/* Grup başlığı yalnızca tanımlı grup varsa anlamlı */}
+                  {gruplar.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 pb-1.5 mb-1 border-b border-border">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-semibold truncate">{grup?.ad ?? "Gruplanmamış"}</span>
+                        {grup?.tarih && (
+                          <span className="text-xs text-muted-foreground shrink-0">{formatDate(grup.tarih)}</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {items.reduce((s, d) => s + (d.adet ?? 1), 0)} eşya ·{" "}
+                        {formatCurrency(items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0))}
+                      </span>
+                    </div>
+                  )}
+                  <div className="divide-y divide-border">
+              {items.map(d => {
                 const zimmetli = kullaniciBul(d.zimmet_kullanici_id)
                 const garantiBitti = d.garanti_bitis && d.garanti_bitis <= today
                 const bakimGerekli = d.sonraki_bakim_tarihi && d.sonraki_bakim_tarihi <= today
@@ -327,6 +401,9 @@ export function Demirbaslar() {
                   </div>
                 )
               })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
@@ -400,9 +477,49 @@ export function Demirbaslar() {
             <div className="space-y-1.5">
               <Label>Adet</Label>
               <Input type="number" min="1" step="1" value={form.adet} onChange={e => f("adet", e.target.value)} />
+              {!editing && (parseInt(form.adet) || 1) > 1 ? (
+                <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border mt-0.5"
+                    checked={form.ayriKaydet}
+                    onChange={e => setForm(p => ({ ...p, ayriKaydet: e.target.checked }))}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    Her birini ayrı kaydet — seri no, zimmet ve durumu tek tek izlemek için
+                    ({parseInt(form.adet) || 1} ayrı kayıt açılır)
+                  </span>
+                </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Aynı üründen birden fazlaysa tek kayıtta tutabilirsin. Toplam değer = birim fiyat × adet.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Grup</Label>
+              <div className="flex gap-2">
+                <Select value={form.grup_id || "yok"} onValueChange={v => f("grup_id", v === "yok" ? "" : v)}>
+                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yok">— Gruplanmamış —</SelectItem>
+                    {gruplar.map(g => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.ad}{g.tarih ? ` · ${formatDate(g.tarih)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline" size="icon" className="shrink-0" title="Yeni grup"
+                  onClick={() => { setGrupForm({ ad: "", tarih: "", aciklama: "" }); setGrupError(null); setGrupDialogOpen(true) }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Aynı üründen birden fazlaysa tek kayıtta tutabilirsin. Toplam değer = birim fiyat × adet.
-                Her birinin seri no veya zimmetini ayrı izlemen gerekiyorsa adet 1 olan ayrı kayıtlar aç.
+                ör. "Başlangıç Demirbaş Listesi", "12.03.2026 Alımı"
               </p>
             </div>
 
@@ -456,6 +573,41 @@ export function Demirbaslar() {
               <Button onClick={handleSave} disabled={saving || !form.ad}>
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Kaydet
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Yeni grup */}
+      <Dialog open={grupDialogOpen} onOpenChange={setGrupDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Yeni Demirbaş Grubu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Grup Adı *</Label>
+              <Input
+                value={grupForm.ad}
+                onChange={e => { setGrupForm(g => ({ ...g, ad: e.target.value })); setGrupError(null) }}
+                placeholder="ör. Başlangıç Demirbaş Listesi"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tarih (isteğe bağlı)</Label>
+              <Input type="date" value={grupForm.tarih} onChange={e => setGrupForm(g => ({ ...g, tarih: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Açıklama (isteğe bağlı)</Label>
+              <Input value={grupForm.aciklama} onChange={e => setGrupForm(g => ({ ...g, aciklama: e.target.value }))} placeholder="Notlar..." />
+            </div>
+            {grupError && <p className="text-sm text-destructive">{grupError}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setGrupDialogOpen(false)}>İptal</Button>
+              <Button onClick={handleGrupSave} disabled={grupSaving || !grupForm.ad.trim()}>
+                {grupSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Oluştur
               </Button>
             </div>
           </div>
