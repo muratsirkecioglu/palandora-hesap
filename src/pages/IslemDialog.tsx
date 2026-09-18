@@ -807,6 +807,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                       birim: m?.birim ?? prev.birim,
                       min_miktar: m != null ? String(m.min_miktar) : prev.min_miktar,
                     }))
+                    // Malzeme Adı alanı bu modda gizli olduğu için açıklamayı
+                    // burada dolduruyoruz; yoksa zorunlu alan boş kalıyor.
+                    if (m) setForm(prev => ({ ...prev, aciklama: `${m.ad} alım` }))
                   }}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
