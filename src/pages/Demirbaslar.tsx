@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info, Banknote } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, AlertTriangle, User, Info, Banknote, ChevronDown, ChevronRight } from "lucide-react"
 import { supabase, type Demirbase, type AppUser, type DemirbasGrubu } from "@/lib/supabase"
 import { useSirket } from "@/contexts/SirketContext"
 import { DemirbasSatisDialog } from "./DemirbasSatisDialog"
@@ -59,6 +59,8 @@ export function Demirbaslar() {
   const [grupSaving, setGrupSaving] = useState(false)
   const [grupError, setGrupError] = useState<string | null>(null)
   const [grupMod, setGrupMod] = useState<"grup" | "cins" | "kategori">("grup")
+  // Kapalı olanları tutuyoruz ki yeni/yeniden adlandırılan gruplar açık gelsin.
+  const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [silinecekGrup, setSilinecekGrup] = useState<{ grup: DemirbasGrubu; adet: number } | null>(null)
   const [grupSiliniyor, setGrupSiliniyor] = useState(false)
   const [editing, setEditing] = useState<DemirbasRow | null>(null)
@@ -169,6 +171,15 @@ export function Demirbaslar() {
     // Yeni grup, açık olan demirbaş formunda seçili gelsin.
     setForm(f => ({ ...f, grup_id: data.id }))
     setGrupDialogOpen(false)
+  }
+
+  function grupAcKapa(anahtar: string) {
+    setKapaliGruplar(prev => {
+      const next = new Set(prev)
+      if (next.has(anahtar)) next.delete(anahtar)
+      else next.add(anahtar)
+      return next
+    })
   }
 
   /** Yalnızca grubu siler; demirbaşlar "Gruplanmamış"a düşer (FK ON DELETE SET NULL). */
@@ -337,7 +348,7 @@ export function Demirbaslar() {
                 {DURUMLAR.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={grupMod} onValueChange={v => setGrupMod(v as typeof grupMod)}>
+            <Select value={grupMod} onValueChange={v => { setGrupMod(v as typeof grupMod); setKapaliGruplar(new Set()) }}>
               <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="grup">Gruba göre</SelectItem>
@@ -345,6 +356,18 @@ export function Demirbaslar() {
                 <SelectItem value="kategori">Kategoriye göre</SelectItem>
               </SelectContent>
             </Select>
+            {gruplanmis.length > 1 && (
+              <Button
+                variant="outline" size="sm" className="shrink-0"
+                onClick={() => setKapaliGruplar(
+                  kapaliGruplar.size > 0
+                    ? new Set()
+                    : new Set(gruplanmis.map(g => g.grup?.id ?? g.baslik))
+                )}
+              >
+                {kapaliGruplar.size > 0 ? "Tümünü Aç" : "Tümünü Kapat"}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -354,17 +377,29 @@ export function Demirbaslar() {
             <p className="text-center text-muted-foreground py-12 text-sm">Demirbaş bulunamadı</p>
           ) : (
             <div className="space-y-5">
-              {gruplanmis.map(({ baslik, tarih, grup, items }) => (
-                <div key={grup?.id ?? baslik}>
-                  {/* Gruba göre modda grup tanımlı değilse başlık göstermeye gerek yok */}
-                  {(grupMod !== "grup" || gruplar.length > 0) && (
+              {gruplanmis.map(({ baslik, tarih, grup, items }) => {
+                const anahtar = grup?.id ?? baslik
+                const basliklıMi = grupMod !== "grup" || gruplar.length > 0
+                const acik = !basliklıMi || !kapaliGruplar.has(anahtar)
+                return (
+                <div key={anahtar}>
+                  {/* Gruba göre modda hiç grup tanımlı değilse başlık göstermeye gerek yok */}
+                  {basliklıMi && (
                     <div className="flex items-center justify-between gap-2 pb-1.5 mb-1 border-b border-border">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => grupAcKapa(anahtar)}
+                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-primary transition-colors"
+                      >
+                        {acik
+                          ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
                         <span className="text-sm font-semibold truncate">{baslik}</span>
                         {tarih && (
                           <span className="text-xs text-muted-foreground shrink-0">{formatDate(tarih)}</span>
                         )}
-                      </div>
+                        <span className="text-xs text-muted-foreground shrink-0">({items.length})</span>
+                      </button>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs text-muted-foreground">
                           {items.reduce((s, d) => s + (d.adet ?? 1), 0)} eşya ·{" "}
@@ -383,7 +418,7 @@ export function Demirbaslar() {
                       </div>
                     </div>
                   )}
-                  <div className="divide-y divide-border">
+                  <div className={`divide-y divide-border ${acik ? "" : "hidden"}`}>
               {items.map(d => {
                 const zimmetli = kullaniciBul(d.zimmet_kullanici_id)
                 const garantiBitti = d.garanti_bitis && d.garanti_bitis <= today
@@ -474,7 +509,8 @@ export function Demirbaslar() {
               })}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
