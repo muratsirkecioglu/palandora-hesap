@@ -24,6 +24,7 @@ interface EditForm {
 }
 
 type HareketRow = {
+  id: string
   tarih: string
   tur: string
   kaynak: string
@@ -40,6 +41,7 @@ const KAYNAK_ETIKET: Record<string, string> = {
 }
 
 type StokRow = {
+  id: string
   islem_id: string | null
   malzeme_id: string
   miktar: number
@@ -82,9 +84,31 @@ export function Stok() {
   })
   const [girisSaving, setGirisSaving] = useState(false)
   const [girisError, setGirisError] = useState<string | null>(null)
+  // Dolu ise mevcut bir açılış hareketi düzenleniyor demektir.
+  const [girisEditId, setGirisEditId] = useState<string | null>(null)
   const yeniMalzeme = girisForm.malzeme_id === "yeni"
 
+  function openGirisEdit(h: HareketRow, malzemeId: string) {
+    setGirisEditId(h.id)
+    setGirisForm({
+      malzeme_id: malzemeId, ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "",
+      miktar: String(h.miktar),
+      birim_fiyat: String(h.birim_fiyat),
+      tarih: h.tarih || new Date().toISOString().slice(0, 10),
+    })
+    setGirisError(null)
+    setGirisOpen(true)
+  }
+
+  async function handleHareketDelete(h: HareketRow) {
+    if (!confirm(`Bu açılış stoğu girişini silmek istediğinize emin misiniz?\n${h.miktar} birim stoktan düşecek.`)) return
+    const { error } = await supabase.from("islem_stok").delete().eq("id", h.id)
+    if (error) { alert("Silme hatası: " + error.message); return }
+    load()
+  }
+
   function openGiris() {
+    setGirisEditId(null)
     setGirisForm({
       malzeme_id: "", ad: "", kategori: "Hammadde", birim: "Adet", min_miktar: "",
       miktar: "", birim_fiyat: "", tarih: new Date().toISOString().slice(0, 10),
@@ -94,6 +118,24 @@ export function Stok() {
   }
 
   async function handleGirisSave() {
+    // Düzenleme: yalnızca hareketin kendisi güncellenir, malzeme tanımına dokunulmaz.
+    if (girisEditId) {
+      const miktar = parseFloat(girisForm.miktar) || 0
+      if (miktar <= 0) { setGirisError("Miktar sıfırdan büyük olmalıdır."); return }
+      setGirisSaving(true)
+      setGirisError(null)
+      const { error } = await supabase.from("islem_stok").update({
+        miktar,
+        birim_fiyat: parseFloat(girisForm.birim_fiyat) || 0,
+        tarih: girisForm.tarih,
+      }).eq("id", girisEditId)
+      setGirisSaving(false)
+      if (error) { setGirisError(error.message); return }
+      setGirisOpen(false)
+      load()
+      return
+    }
+
     if (!girisForm.malzeme_id) { setGirisError("Malzeme seçin."); return }
     if (yeniMalzeme && !girisForm.ad.trim()) { setGirisError("Malzeme adı zorunludur."); return }
 
@@ -152,7 +194,7 @@ export function Stok() {
     const [{ data: malzemeData }, { data: stokData }] = await Promise.all([
       supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("islem_stok")
-        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, kaynak, tarih, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
+        .select("id, islem_id, malzeme_id, miktar, tur, birim_fiyat, kaynak, tarih, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
         .eq("sirket_id", aktifSirketId)
         // Güncel birim fiyat en son girişten alınır; hareketin kendi tarihi esas.
         .order("tarih", { ascending: false, nullsFirst: false })
@@ -183,6 +225,7 @@ export function Stok() {
 
       const list = hareketler.get(s.malzeme_id) ?? []
       list.push({
+        id: s.id,
         tarih: s.tarih ?? s.islem?.tarih ?? "",
         tur: s.tur,
         kaynak: s.kaynak,
@@ -416,6 +459,7 @@ export function Stok() {
                               <th className="text-right font-medium px-3 py-1.5">Miktar</th>
                               <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Birim Fiyat</th>
                               <th className="text-center font-medium px-3 py-1.5">Fatura</th>
+                              <th className="px-2 py-1.5 w-px"></th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border">
@@ -441,6 +485,36 @@ export function Stok() {
                                       : k.faturali
                                         ? <FileCheck className="h-3.5 w-3.5 text-green-600 inline" />
                                         : <FileX className="h-3.5 w-3.5 text-orange-400 inline" />}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">
+                                    {/* Yalnızca açılış girişi burada düzenlenebilir; diğerleri
+                                        kendi kaydına (işlem / üretim) bağlı olduğu için oradan yönetilir. */}
+                                    {isAdmin && k.kaynak === "acilis" ? (
+                                      <div className="flex items-center justify-end gap-0.5">
+                                        <Button
+                                          variant="ghost" size="icon" className="h-6 w-6"
+                                          title="Düzenle"
+                                          onClick={() => openGirisEdit(k, m.id)}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost" size="icon"
+                                          className="h-6 w-6 text-destructive hover:text-destructive"
+                                          title="Sil"
+                                          onClick={() => handleHareketDelete(k)}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <span
+                                        className="text-muted-foreground"
+                                        title={k.kaynak === "uretim" ? "Üretim sayfasından yönetilir" : "Finans sayfasından yönetilir"}
+                                      >
+                                        —
+                                      </span>
+                                    )}
                                   </td>
                                 </tr>
                               )
@@ -504,13 +578,14 @@ export function Stok() {
       <Dialog open={girisOpen} onOpenChange={setGirisOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Stok Girişi</DialogTitle>
+            <DialogTitle>{girisEditId ? "Stok Girişini Düzenle" : "Stok Girişi"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Malzeme *</Label>
               <Select
                 value={girisForm.malzeme_id}
+                disabled={!!girisEditId}
                 onValueChange={v => { setGirisForm(f => ({ ...f, malzeme_id: v })); setGirisError(null) }}
               >
                 <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
@@ -523,7 +598,7 @@ export function Stok() {
               </Select>
             </div>
 
-            {yeniMalzeme && (
+            {yeniMalzeme && !girisEditId && (
               <>
                 <div className="space-y-1.5">
                   <Label>Malzeme Adı *</Label>
@@ -595,8 +670,10 @@ export function Stok() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Bu giriş bir satın alma kaydı oluşturmaz, yalnızca stoğa eklenir — gider olarak görünmez.
-              {yeniMalzeme && " Miktarı boş bırakırsan sadece malzeme tanımlanır."}
+              {girisEditId
+                ? "Yalnızca bu stok hareketi güncellenir; malzeme tanımı değişmez."
+                : <>Bu giriş bir satın alma kaydı oluşturmaz, yalnızca stoğa eklenir — gider olarak görünmez.
+                    {yeniMalzeme && " Miktarı boş bırakırsan sadece malzeme tanımlanır."}</>}
             </p>
 
             {girisError && <p className="text-sm text-destructive">{girisError}</p>}
