@@ -58,7 +58,6 @@ export function Demirbaslar() {
   const [grupForm, setGrupForm] = useState({ ad: "", tarih: "", aciklama: "" })
   const [grupSaving, setGrupSaving] = useState(false)
   const [grupError, setGrupError] = useState<string | null>(null)
-  const [grupMod, setGrupMod] = useState<"grup" | "cins" | "kategori">("grup")
   // Kapalı olanları tutuyoruz ki yeni/yeniden adlandırılan gruplar açık gelsin.
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [silinecekGrup, setSilinecekGrup] = useState<{ grup: DemirbasGrubu; adet: number } | null>(null)
@@ -228,36 +227,51 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
-  // Seçilen moda göre gösterim. Cins, ayrı kaydedilen eşyalardaki "#N" ekini
-  // atarak bulunur; böylece "Sandalye #1..#10" ve sonraki "Sandalye" alımları
-  // aynı cins altında toplanır.
-  const gruplanmis = (() => {
-    if (grupMod === "grup") {
-      const map = new Map<string, DemirbasRow[]>()
-      for (const d of filtered) {
-        const key = d.grup_id ?? ""
-        map.set(key, [...(map.get(key) ?? []), d])
-      }
-      const siraliGruplar = gruplar
-        .filter(g => map.has(g.id))
-        .map(g => ({ baslik: g.ad, tarih: g.tarih, grup: g as DemirbasGrubu | null, items: map.get(g.id)! }))
-      const gruplanmamis = map.get("")
-      return gruplanmamis
-        ? [...siraliGruplar, { baslik: "Gruplanmamış", tarih: null, grup: null, items: gruplanmamis }]
-        : siraliGruplar
-    }
+  const esyaSayisi = (items: DemirbasRow[]) => items.reduce((s, d) => s + (d.adet ?? 1), 0)
+  const toplamTutar = (items: DemirbasRow[]) => items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0)
 
-    const anahtar = (d: DemirbasRow) =>
-      grupMod === "kategori" ? d.kategori : cinsAdi(d.ad)
+  // Sabit hiyerarşi: Kategori → Cins → Grup → kayıtlar.
+  // Cins, ayrı kaydedilen eşyalardaki "#N" eki atılarak bulunur; böylece
+  // "Sandalye #1..#10" ve sonraki "Sandalye" alımları aynı cins altında toplanır.
+  const agac = (() => {
+    const grupById = new Map(gruplar.map(g => [g.id, g]))
+    const katMap = new Map<string, Map<string, Map<string, DemirbasRow[]>>>()
 
-    const map = new Map<string, DemirbasRow[]>()
     for (const d of filtered) {
-      const key = anahtar(d)
-      map.set(key, [...(map.get(key) ?? []), d])
+      const kat = d.kategori || "Diğer"
+      const cins = cinsAdi(d.ad)
+      const grupKey = d.grup_id ?? ""
+      if (!katMap.has(kat)) katMap.set(kat, new Map())
+      const cinsMap = katMap.get(kat)!
+      if (!cinsMap.has(cins)) cinsMap.set(cins, new Map())
+      const grupMap = cinsMap.get(cins)!
+      grupMap.set(grupKey, [...(grupMap.get(grupKey) ?? []), d])
     }
-    return Array.from(map.entries())
-      .sort((a, b) => a[0].localeCompare(b[0], "tr"))
-      .map(([baslik, items]) => ({ baslik, tarih: null, grup: null as DemirbasGrubu | null, items }))
+
+    const trSirala = (a: string, b: string) => a.localeCompare(b, "tr")
+
+    return Array.from(katMap.entries())
+      .sort((a, b) => trSirala(a[0], b[0]))
+      .map(([kategori, cinsMap]) => {
+        const cinsler = Array.from(cinsMap.entries())
+          .sort((a, b) => trSirala(a[0], b[0]))
+          .map(([cins, grupMap]) => {
+            const gruplarListe = Array.from(grupMap.entries())
+              // Gruplanmamış en sona
+              .sort((a, b) => a[0] === "" ? 1 : b[0] === "" ? -1 : trSirala(
+                grupById.get(a[0])?.ad ?? "", grupById.get(b[0])?.ad ?? ""))
+              .map(([gid, items]) => ({
+                grup: gid ? (grupById.get(gid) ?? null) : null,
+                items,
+              }))
+            return {
+              cins,
+              gruplar: gruplarListe,
+              items: gruplarListe.flatMap(g => g.items),
+            }
+          })
+        return { kategori, cinsler, items: cinsler.flatMap(c => c.items) }
+      })
   })()
 
   // Envanter toplamları yalnızca elde olan demirbaşları kapsar.
@@ -348,26 +362,24 @@ export function Demirbaslar() {
                 {DURUMLAR.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={grupMod} onValueChange={v => { setGrupMod(v as typeof grupMod); setKapaliGruplar(new Set()) }}>
-              <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="grup">Gruba göre</SelectItem>
-                <SelectItem value="cins">Cinse göre</SelectItem>
-                <SelectItem value="kategori">Kategoriye göre</SelectItem>
-              </SelectContent>
-            </Select>
-            {gruplanmis.length > 1 && (
-              <Button
-                variant="outline" size="sm" className="shrink-0"
-                onClick={() => setKapaliGruplar(
-                  kapaliGruplar.size > 0
-                    ? new Set()
-                    : new Set(gruplanmis.map(g => g.grup?.id ?? g.baslik))
-                )}
-              >
-                {kapaliGruplar.size > 0 ? "Tümünü Aç" : "Tümünü Kapat"}
-              </Button>
-            )}
+            <Button
+              variant="outline" size="sm" className="shrink-0"
+              onClick={() => {
+                if (kapaliGruplar.size > 0) { setKapaliGruplar(new Set()); return }
+                // Tüm düğümleri kapat: kategori, cins ve grup seviyeleri
+                const hepsi = new Set<string>()
+                for (const k of agac) {
+                  hepsi.add(k.kategori)
+                  for (const c of k.cinsler) {
+                    hepsi.add(`${k.kategori}|${c.cins}`)
+                    for (const g of c.gruplar) hepsi.add(`${k.kategori}|${c.cins}|${g.grup?.id ?? ""}`)
+                  }
+                }
+                setKapaliGruplar(hepsi)
+              }}
+            >
+              {kapaliGruplar.size > 0 ? "Tümünü Aç" : "Tümünü Kapat"}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -376,49 +388,91 @@ export function Demirbaslar() {
           ) : filtered.length === 0 ? (
             <p className="text-center text-muted-foreground py-12 text-sm">Demirbaş bulunamadı</p>
           ) : (
-            <div className="space-y-5">
-              {gruplanmis.map(({ baslik, tarih, grup, items }) => {
-                const anahtar = grup?.id ?? baslik
-                const basliklıMi = grupMod !== "grup" || gruplar.length > 0
-                const acik = !basliklıMi || !kapaliGruplar.has(anahtar)
+            <div className="space-y-1">
+              {agac.map(kat => {
+                const katAnahtar = kat.kategori
+                const katAcik = !kapaliGruplar.has(katAnahtar)
                 return (
-                <div key={anahtar}>
-                  {/* Gruba göre modda hiç grup tanımlı değilse başlık göstermeye gerek yok */}
-                  {basliklıMi && (
-                    <div className="flex items-center justify-between gap-2 pb-1.5 mb-1 border-b border-border">
-                      <button
-                        type="button"
-                        onClick={() => grupAcKapa(anahtar)}
-                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-primary transition-colors"
-                      >
-                        {acik
-                          ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                        <span className="text-sm font-semibold truncate">{baslik}</span>
-                        {tarih && (
-                          <span className="text-xs text-muted-foreground shrink-0">{formatDate(tarih)}</span>
-                        )}
-                        <span className="text-xs text-muted-foreground shrink-0">({items.length})</span>
-                      </button>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-muted-foreground">
-                          {items.reduce((s, d) => s + (d.adet ?? 1), 0)} eşya ·{" "}
-                          {formatCurrency(items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0))}
-                        </span>
-                        {isAdmin && grup && (
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-6 w-6 text-destructive hover:text-destructive"
-                            title="Grubu sil"
-                            onClick={() => setSilinecekGrup({ grup, adet: items.length })}
+                <div key={katAnahtar}>
+                  {/* 1. seviye — Kategori */}
+                  <div className="flex items-center justify-between gap-2 py-1.5 border-b border-border">
+                    <button
+                      type="button"
+                      onClick={() => grupAcKapa(katAnahtar)}
+                      className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-primary transition-colors"
+                    >
+                      {katAcik
+                        ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <span className="text-sm font-bold truncate">{kat.kategori}</span>
+                    </button>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {esyaSayisi(kat.items)} eşya · {formatCurrency(toplamTutar(kat.items))}
+                    </span>
+                  </div>
+
+                  {katAcik && kat.cinsler.map(c => {
+                    const cinsAnahtar = `${kat.kategori}|${c.cins}`
+                    const cinsAcik = !kapaliGruplar.has(cinsAnahtar)
+                    return (
+                      <div key={cinsAnahtar} className="ml-4">
+                        {/* 2. seviye — Cins */}
+                        <div className="flex items-center justify-between gap-2 py-1.5 border-b border-border/60">
+                          <button
+                            type="button"
+                            onClick={() => grupAcKapa(cinsAnahtar)}
+                            className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-primary transition-colors"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  <div className={`divide-y divide-border ${acik ? "" : "hidden"}`}>
+                            {cinsAcik
+                              ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                            <span className="text-sm font-semibold truncate">{c.cins}</span>
+                          </button>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {esyaSayisi(c.items)} eşya · {formatCurrency(toplamTutar(c.items))}
+                          </span>
+                        </div>
+
+                        {cinsAcik && c.gruplar.map(({ grup, items }) => {
+                          const grupAnahtar = `${cinsAnahtar}|${grup?.id ?? ""}`
+                          const grupAcik = !kapaliGruplar.has(grupAnahtar)
+                          return (
+                            <div key={grupAnahtar} className="ml-4">
+                              {/* 3. seviye — Grup */}
+                              <div className="flex items-center justify-between gap-2 py-1.5 border-b border-border/40">
+                                <button
+                                  type="button"
+                                  onClick={() => grupAcKapa(grupAnahtar)}
+                                  className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-primary transition-colors"
+                                >
+                                  {grupAcik
+                                    ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                    : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                                  <span className={`text-xs truncate ${grup ? "font-medium" : "text-muted-foreground italic"}`}>
+                                    {grup?.ad ?? "Gruplanmamış"}
+                                  </span>
+                                  {grup?.tarih && (
+                                    <span className="text-xs text-muted-foreground shrink-0">{formatDate(grup.tarih)}</span>
+                                  )}
+                                </button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">
+                                    {esyaSayisi(items)} eşya · {formatCurrency(toplamTutar(items))}
+                                  </span>
+                                  {isAdmin && grup && (
+                                    <Button
+                                      variant="ghost" size="icon"
+                                      className="h-6 w-6 text-destructive hover:text-destructive"
+                                      title="Grubu sil"
+                                      onClick={() => setSilinecekGrup({ grup, adet: items.length })}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className={`divide-y divide-border ml-4 ${grupAcik ? "" : "hidden"}`}>
               {items.map(d => {
                 const zimmetli = kullaniciBul(d.zimmet_kullanici_id)
                 const garantiBitti = d.garanti_bitis && d.garanti_bitis <= today
@@ -507,7 +561,13 @@ export function Demirbaslar() {
                   </div>
                 )
               })}
-                  </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
                 </div>
                 )
               })}
