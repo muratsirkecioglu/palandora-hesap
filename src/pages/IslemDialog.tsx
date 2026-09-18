@@ -30,6 +30,8 @@ interface OdemeSatir {
 }
 
 interface MalzemeAlt {
+  /** Boş ise yeni malzeme tanımlanır; dolu ise mevcut malzemenin stoğuna eklenir. */
+  mevcut_id: string
   ad: string
   mal_kategori: string
   birim: string
@@ -38,6 +40,7 @@ interface MalzemeAlt {
 }
 
 const defaultMalzemeAlt: MalzemeAlt = {
+  mevcut_id: "",
   ad: "",
   mal_kategori: "Hammadde",
   birim: "Adet",
@@ -229,7 +232,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             if (!giris) return
             setLinkedMalzemeId(giris.malzeme_id)
             const { data: m } = await supabase.from("malzemeler").select("*").eq("id", giris.malzeme_id).maybeSingle()
-            if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
+            if (m) setMalzemeAlt({ mevcut_id: "", ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (editing.tur === "gider" && editing.kategori === "Demirbaş") {
         // Bu işlem birden fazla demirbaş kaydı üretmiş olabilir (ayrı ayrı kaydedilmişse),
@@ -291,7 +294,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           .then(async ({ data: giris }) => {
             if (!giris) return
             const { data: m } = await supabase.from("malzemeler").select("*").eq("id", giris.malzeme_id).maybeSingle()
-            if (m) setMalzemeAlt({ ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
+            if (m) setMalzemeAlt({ mevcut_id: "", ad: m.ad, mal_kategori: m.kategori, birim: m.birim, miktar: String(giris.miktar), min_miktar: String(m.min_miktar) })
           })
       } else if (initialValues.tur === "gider" && initialValues.kategori === "Demirbaş") {
         supabase.from("demirbaslar").select("*").eq("kaynak_islem_id", initialValues.id).order("ad").limit(1)
@@ -379,8 +382,12 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       setError("Açıklama, tutar ve tarih zorunludur.")
       return
     }
-    if (isMalzemeGider && (!malzemeAlt.ad || !malzemeAlt.miktar)) {
-      setError("Stok bilgisi için malzeme adı ve miktar zorunludur.")
+    if (isMalzemeGider && !malzemeAlt.miktar) {
+      setError("Stok bilgisi için miktar zorunludur.")
+      return
+    }
+    if (isMalzemeGider && !malzemeAlt.mevcut_id && !linkedMalzemeId && !malzemeAlt.ad) {
+      setError("Yeni malzeme için ad zorunludur.")
       return
     }
     if (isDemirbasGider && !demirbasAlt.ad) {
@@ -510,6 +517,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         let malzemeId = linkedMalzemeId
         if (malzemeId) {
           await supabase.from("malzemeler").update({ ...malzemePayload, updated_at: new Date().toISOString() }).eq("id", malzemeId)
+        } else if (malzemeAlt.mevcut_id) {
+          // Mevcut malzemenin stoğuna ekleme: tanımına dokunulmaz, yalnızca giriş yazılır.
+          malzemeId = malzemeAlt.mevcut_id
         } else {
           const { data: newM, error: mErr } = await supabase.from("malzemeler").insert(malzemePayload).select("id").single()
           if (mErr) { setError(mErr.message); return }
@@ -523,6 +533,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             miktar,
             tur: "giris",
             birim_fiyat: birimFiyat,
+            tarih: form.tarih,
             sirket_id: aktifSirketId,
           })
           if (stokErr) { setError(stokErr.message); return }
@@ -540,6 +551,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               miktar: parseFloat(s.miktar),
               tur: "cikis",
               birim_fiyat: parseFloat(s.birim_fiyat || "0"),
+              tarih: form.tarih,
               sirket_id: aktifSirketId,
             }))
           )
@@ -778,41 +790,86 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               <div className="flex-1 border-t border-border" />
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Malzeme Adı *</Label>
-              <Input value={malzemeAlt.ad} onChange={e => setMA("ad", e.target.value)} placeholder="Malzeme adı" />
-            </div>
+            {/* Düzenlemede malzeme zaten bağlı; seçim gösterilmez. */}
+            {!linkedMalzemeId && (
+              <div className="space-y-1.5">
+                <Label>Malzeme</Label>
+                <Select
+                  value={malzemeAlt.mevcut_id || "yeni"}
+                  onValueChange={v => {
+                    if (v === "yeni") { setMA("mevcut_id", ""); return }
+                    const m = malzemeler.find(x => x.id === v)
+                    setMalzemeAlt(prev => ({
+                      ...prev,
+                      mevcut_id: v,
+                      ad: m?.ad ?? prev.ad,
+                      mal_kategori: m?.kategori ?? prev.mal_kategori,
+                      birim: m?.birim ?? prev.birim,
+                      min_miktar: m != null ? String(m.min_miktar) : prev.min_miktar,
+                    }))
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yeni">+ Yeni malzeme tanımla</SelectItem>
+                    {malzemeler.map(m => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.ad} · mevcut {m.stok} {m.birim}
+                        {m.son_birim_fiyat ? ` · ${formatCurrency(m.son_birim_fiyat)}/${m.birim}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {malzemeAlt.mevcut_id && (
+                  <p className="text-xs text-muted-foreground">
+                    Bu alış mevcut stoğa eklenir. Malzeme tanımı değişmez; birim fiyat bu alıştan güncellenir.
+                  </p>
+                )}
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Stok Kategorisi</Label>
-                <Select value={malzemeAlt.mal_kategori} onValueChange={v => setMA("mal_kategori", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {MALZEME_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Birim</Label>
-                <Select value={malzemeAlt.birim} onValueChange={v => setMA("birim", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            {/* Yeni malzeme tanımı — mevcut malzeme seçildiyse gerekmez */}
+            {!malzemeAlt.mevcut_id && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Malzeme Adı *</Label>
+                  <Input value={malzemeAlt.ad} onChange={e => setMA("ad", e.target.value)} placeholder="Malzeme adı" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Stok Kategorisi</Label>
+                    <Select value={malzemeAlt.mal_kategori} onValueChange={v => setMA("mal_kategori", v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MALZEME_KATEGORILER.map(k => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Birim</Label>
+                    <Select value={malzemeAlt.birim} onValueChange={v => setMA("birim", v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Miktar *</Label>
                 <Input type="number" min="0" step="0.001" value={malzemeAlt.miktar} onChange={e => setMA("miktar", e.target.value)} placeholder="0" />
               </div>
-              <div className="space-y-1.5">
-                <Label>Min. Stok</Label>
-                <Input type="number" min="0" value={malzemeAlt.min_miktar} onChange={e => setMA("min_miktar", e.target.value)} placeholder="0" />
-              </div>
+              {!malzemeAlt.mevcut_id && (
+                <div className="space-y-1.5">
+                  <Label>Min. Stok</Label>
+                  <Input type="number" min="0" value={malzemeAlt.min_miktar} onChange={e => setMA("min_miktar", e.target.value)} placeholder="0" />
+                </div>
+              )}
             </div>
 
             {hesapBirimFiyat !== null && (

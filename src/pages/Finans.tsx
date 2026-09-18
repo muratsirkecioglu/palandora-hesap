@@ -73,7 +73,12 @@ export function Finans() {
     const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
       islemQ,
       supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
-      supabase.from("islem_stok").select("islem_id, malzeme_id, miktar, tur, birim_fiyat, islem:islemler!islem_id(tutar, nakliye_tutari, tarih, faturali, nakliye_faturali)").eq("sirket_id", aktifSirketId),
+      // Sıralama önemli: malzemenin güncel birim fiyatı EN SON girişten alınır.
+      supabase.from("islem_stok")
+        .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, tarih, islem:islemler!islem_id(tutar, nakliye_tutari, tarih, faturali, nakliye_faturali)")
+        .eq("sirket_id", aktifSirketId)
+        .order("tarih", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
       supabase.from("hesaplar").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       supabase.from("odemeler").select("islem_id, tutar, hesap_id").eq("sirket_id", aktifSirketId),
     ])
@@ -82,7 +87,7 @@ export function Finans() {
     setHesaplar((hesapData ?? []) as Hesap[])
 
     // Stok hareketlerini işle
-    type StokRow = { islem_id: string; malzeme_id: string; miktar: number; tur: string; birim_fiyat: number; islem: { tutar: number; nakliye_tutari: number | null; tarih: string; faturali: boolean; nakliye_faturali: boolean } | null }
+    type StokRow = { islem_id: string | null; malzeme_id: string; miktar: number; tur: string; birim_fiyat: number; tarih: string | null; islem: { tutar: number; nakliye_tutari: number | null; tarih: string; faturali: boolean; nakliye_faturali: boolean } | null }
     const allStok = (stokData ?? []) as unknown as StokRow[]
 
     // Malzeme bazında stok hesapla (giris - cikis) ve son giris bilgisi
@@ -91,8 +96,11 @@ export function Finans() {
       const e = malzemeStokMap.get(s.malzeme_id) ?? { giris: 0, cikis: 0, sonGirisFiyat: null, sonGirisIslem: null }
       if (s.tur === "giris") {
         e.giris += s.miktar
-        e.sonGirisFiyat = s.birim_fiyat
-        e.sonGirisIslem = s.islem
+        // Sorgu yeniden eskiye sıralı; ilk görülen giriş en güncel olanıdır.
+        if (e.sonGirisFiyat === null) {
+          e.sonGirisFiyat = s.birim_fiyat
+          e.sonGirisIslem = s.islem
+        }
       } else {
         e.cikis += s.miktar
       }

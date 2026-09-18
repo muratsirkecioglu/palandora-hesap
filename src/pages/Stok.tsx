@@ -147,6 +147,8 @@ export function Stok() {
       supabase.from("islem_stok")
         .select("islem_id, malzeme_id, miktar, tur, birim_fiyat, kaynak, tarih, islem:islemler!islem_id(tutar, nakliye_tutari, nakliye_faturali, tarih, faturali, aciklama, kategori)")
         .eq("sirket_id", aktifSirketId)
+        // Güncel birim fiyat en son girişten alınır; hareketin kendi tarihi esas.
+        .order("tarih", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false }),
     ])
 

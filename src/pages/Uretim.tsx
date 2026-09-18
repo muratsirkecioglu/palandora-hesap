@@ -60,9 +60,12 @@ export function Uretim() {
         .eq("sirket_id", aktifSirketId)
         .order("tarih", { ascending: false }),
       supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
+      // Sıralama önemli: güncel birim fiyat EN SON girişten alınır.
       supabase.from("islem_stok")
         .select("malzeme_id, miktar, tur, birim_fiyat, uretim_id")
-        .eq("sirket_id", aktifSirketId),
+        .eq("sirket_id", aktifSirketId)
+        .order("tarih", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
     ])
 
     setUretimler((uData ?? []) as unknown as UretimRow[])
@@ -74,7 +77,8 @@ export function Uretim() {
     const sonFiyat = new Map<string, number>()
     for (const s of stokRows) {
       stokMap.set(s.malzeme_id, (stokMap.get(s.malzeme_id) ?? 0) + (s.tur === "giris" ? s.miktar : -s.miktar))
-      if (s.tur === "giris") sonFiyat.set(s.malzeme_id, s.birim_fiyat)
+      // Sorgu yeniden eskiye sıralı; ilk görülen giriş en güncel olanıdır.
+      if (s.tur === "giris" && !sonFiyat.has(s.malzeme_id)) sonFiyat.set(s.malzeme_id, s.birim_fiyat)
     }
 
     const malzemeList = ((mData ?? []) as import("@/lib/supabase").Malzeme[]).map(m => ({
