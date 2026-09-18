@@ -23,13 +23,20 @@ interface EditForm {
   aciklama: string
 }
 
-type CikisRow = {
+type HareketRow = {
   tarih: string
+  tur: string
+  kaynak: string
   miktar: number
   birim_fiyat: number
   aciklama: string
   kategori: string
   faturali: boolean
+}
+
+const KAYNAK_ETIKET: Record<string, string> = {
+  uretim: "Üretim",
+  acilis: "Açılış stoğu",
 }
 
 type StokRow = {
@@ -55,7 +62,7 @@ export function Stok() {
   const { user } = useAuth()
   const { aktifSirketId, isSirketAdmin: isAdmin } = useSirket()
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
-  const [cikisMap, setCikisMap] = useState<Map<string, CikisRow[]>>(new Map())
+  const [hareketMap, setHareketMap] = useState<Map<string, HareketRow[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -155,7 +162,8 @@ export function Stok() {
     const rows = (stokData ?? []) as unknown as StokRow[]
 
     const stokMap = new Map<string, { giris: number; cikis: number; sonGiris: StokRow | null }>()
-    const cikislar = new Map<string, CikisRow[]>()
+    // Tüm hareketler (giriş + çıkış) — stoğun nereden geldiği görünsün diye.
+    const hareketler = new Map<string, HareketRow[]>()
 
     for (const s of rows) {
       const e = stokMap.get(s.malzeme_id) ?? { giris: 0, cikis: 0, sonGiris: null }
@@ -164,18 +172,27 @@ export function Stok() {
         if (!e.sonGiris) e.sonGiris = s
       } else {
         e.cikis += s.miktar
-        const list = cikislar.get(s.malzeme_id) ?? []
-        list.push({
-          tarih: s.tarih ?? s.islem?.tarih ?? "",
-          miktar: s.miktar,
-          birim_fiyat: s.birim_fiyat,
-          aciklama: s.islem?.aciklama ?? (s.kaynak === "uretim" ? "Üretimde kullanıldı" : ""),
-          kategori: s.islem?.kategori ?? (s.kaynak === "uretim" ? "Üretim" : ""),
-          faturali: s.islem?.faturali ?? false,
-        })
-        cikislar.set(s.malzeme_id, list)
       }
       stokMap.set(s.malzeme_id, e)
+
+      // İşlemsiz hareketlerde (üretim / açılış) açıklama kaynaktan türetilir.
+      const kaynakEtiket = KAYNAK_ETIKET[s.kaynak] ?? ""
+      const varsayilanAciklama = s.kaynak === "uretim"
+        ? (s.tur === "giris" ? "Üretimden giriş" : "Üretimde kullanıldı")
+        : kaynakEtiket
+
+      const list = hareketler.get(s.malzeme_id) ?? []
+      list.push({
+        tarih: s.tarih ?? s.islem?.tarih ?? "",
+        tur: s.tur,
+        kaynak: s.kaynak,
+        miktar: s.miktar,
+        birim_fiyat: s.birim_fiyat,
+        aciklama: s.islem?.aciklama ?? varsayilanAciklama,
+        kategori: s.islem?.kategori ?? kaynakEtiket,
+        faturali: s.islem?.faturali ?? false,
+      })
+      hareketler.set(s.malzeme_id, list)
     }
 
     const malzemelerWithStok: MalzemeWithStok[] = ((malzemeData ?? []) as Malzeme[]).map(m => {
@@ -189,7 +206,7 @@ export function Stok() {
     })
 
     setMalzemeler(malzemelerWithStok)
-    setCikisMap(cikislar)
+    setHareketMap(hareketler)
     setLoading(false)
   }
 
@@ -318,7 +335,7 @@ export function Stok() {
                 const bitmisMi = m.stok <= 0
                 const gi = m.son_giris_islem
                 const faturali = gi?.faturali === true
-                const kullanim = cikisMap.get(m.id) ?? []
+                const kullanim = hareketMap.get(m.id) ?? []
                 const isExpanded = expanded.has(m.id)
 
                 const rowBg = faturali
@@ -349,7 +366,7 @@ export function Stok() {
                             ? <FileCheck className="h-3.5 w-3.5 shrink-0 text-green-600" />
                             : <FileX className="h-3.5 w-3.5 shrink-0 text-orange-400" />)}
                           {kullanim.length > 0 && (
-                            <span className="text-xs text-muted-foreground">{kullanim.length} kullanım</span>
+                            <span className="text-xs text-muted-foreground">{kullanim.length} hareket</span>
                           )}
                         </div>
                         {m.aciklama && <p className="text-xs text-muted-foreground mt-0.5 italic">{m.aciklama}</p>}
@@ -402,22 +419,32 @@ export function Stok() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border">
-                            {kullanim.map((k, i) => (
-                              <tr key={i} className="hover:bg-muted/50">
-                                <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">{formatDate(k.tarih)}</td>
-                                <td className="px-3 py-1.5">{k.aciklama || "—"}</td>
-                                <td className="px-3 py-1.5 hidden sm:table-cell text-muted-foreground">{k.kategori || "—"}</td>
-                                <td className="px-3 py-1.5 text-right font-medium text-red-500">-{k.miktar} {m.birim}</td>
-                                <td className="px-3 py-1.5 text-right hidden sm:table-cell text-muted-foreground">
-                                  {k.birim_fiyat > 0 ? formatCurrency(k.birim_fiyat) : "—"}
-                                </td>
-                                <td className="px-3 py-1.5 text-center">
-                                  {k.faturali
-                                    ? <FileCheck className="h-3.5 w-3.5 text-green-600 inline" />
-                                    : <FileX className="h-3.5 w-3.5 text-orange-400 inline" />}
-                                </td>
-                              </tr>
-                            ))}
+                            {kullanim.map((k, i) => {
+                              const girisMi = k.tur === "giris"
+                              return (
+                                <tr key={i} className="hover:bg-muted/50">
+                                  <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
+                                    {k.tarih ? formatDate(k.tarih) : "—"}
+                                  </td>
+                                  <td className="px-3 py-1.5">{k.aciklama || "—"}</td>
+                                  <td className="px-3 py-1.5 hidden sm:table-cell text-muted-foreground">{k.kategori || "—"}</td>
+                                  <td className={`px-3 py-1.5 text-right font-medium ${girisMi ? "text-green-600" : "text-red-500"}`}>
+                                    {girisMi ? "+" : "-"}{k.miktar} {m.birim}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right hidden sm:table-cell text-muted-foreground">
+                                    {k.birim_fiyat > 0 ? formatCurrency(k.birim_fiyat) : "—"}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-center">
+                                    {/* Fatura yalnızca satın almada anlamlı */}
+                                    {k.kaynak !== "islem"
+                                      ? <span className="text-muted-foreground">—</span>
+                                      : k.faturali
+                                        ? <FileCheck className="h-3.5 w-3.5 text-green-600 inline" />
+                                        : <FileX className="h-3.5 w-3.5 text-orange-400 inline" />}
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>
