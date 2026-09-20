@@ -120,6 +120,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [bagliGiderler, setBagliGiderler] = useState<Islem[]>([])
   // Demirbaş Satışı geliri: hangi demirbaş, kaç adet satılıyor
   const [satilabilirler, setSatilabilirler] = useState<Demirbase[]>([])
+  // Cins şablonu için tüm demirbaşlar (satılmış olanlar da cins bilgisi taşır)
+  const [tumDemirbaslar, setTumDemirbaslar] = useState<Demirbase[]>([])
   const [satisDemirbasId, setSatisDemirbasId] = useState("")
   const [satisAdet, setSatisAdet] = useState("1")
   const [saving, setSaving] = useState(false)
@@ -180,6 +182,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
       supabase.from("demirbaslar").select("*").eq("sirket_id", aktifSirketId).order("ad")
         .then(({ data }) => {
           const hepsi = (data ?? []) as Demirbase[]
+          setTumDemirbaslar(hepsi)
           const bagli = editing ? hepsi.filter(d => d.satis_islem_id === editing.id) : []
           setSatilabilirler([
             ...hepsi.filter(d => !["satildi", "hurda", "devredildi"].includes(d.durum)),
@@ -333,6 +336,37 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     if (field === "ad") {
       setForm(prev => ({ ...prev, aciklama: value ? `${value} alım` : "" }))
     }
+  }
+
+  // Daha önce girilmiş demirbaş cinsleri; her cins için en güncel kayıt şablondur.
+  const demirbasCinsleri = (() => {
+    const map = new Map<string, Demirbase>()
+    for (const d of tumDemirbaslar) {
+      const c = d.ad.replace(/\s*#\d+\s*$/, "").trim() || d.ad
+      const mevcut = map.get(c)
+      if (!mevcut || (d.created_at ?? "") > (mevcut.created_at ?? "")) map.set(c, d)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], "tr"))
+  })()
+
+  /** Mevcut cins seçilince ortak alanlar şablondan doldurulur. */
+  function demirbasCinsSec(cins: string) {
+    if (cins === "yeni") {
+      setDemirbasAlt(prev => ({ ...prev, ad: "", marka: "", model: "", konum: "" }))
+      setForm(prev => ({ ...prev, aciklama: "" }))
+      return
+    }
+    const d = demirbasCinsleri.find(([c]) => c === cins)?.[1]
+    if (!d) return
+    setDemirbasAlt(prev => ({
+      ...prev,
+      ad: cins,
+      db_kategori: d.kategori,
+      marka: d.marka ?? "",
+      model: d.model ?? "",
+      konum: d.konum ?? "",
+    }))
+    setForm(prev => ({ ...prev, aciklama: `${cins} alım` }))
   }
 
   function addStokSatir() {
@@ -902,6 +936,30 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               </div>
             ) : (
             <>
+            {/* Aynı cinsten tekrar alımda ortak alanları yeniden girmemek için */}
+            {!linkedDemirbasId && demirbasCinsleri.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Cins</Label>
+                <Select
+                  value={demirbasCinsleri.some(([c]) => c === demirbasAlt.ad) ? demirbasAlt.ad : "yeni"}
+                  onValueChange={demirbasCinsSec}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yeni">+ Yeni cins</SelectItem>
+                    {demirbasCinsleri.map(([cins, d]) => (
+                      <SelectItem key={cins} value={cins}>
+                        {cins} · {d.kategori}{d.marka ? ` · ${d.marka}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Daha önce girdiğin bir cinsi seçersen kategori, marka, model ve konum otomatik dolar.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Demirbaş Adı *</Label>
               <Input value={demirbasAlt.ad} onChange={e => setDA("ad", e.target.value)} placeholder="ör. MacBook Pro 14, Çalışma Masası" />

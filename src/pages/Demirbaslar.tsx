@@ -332,6 +332,36 @@ export function Demirbaslar() {
     return matchSearch && matchKat && matchDurum
   })
 
+  // Daha önce girilmiş cinsler: her cins için en güncel kayıt şablon olarak kullanılır.
+  const cinsSecenekleri = (() => {
+    const map = new Map<string, DemirbasRow>()
+    for (const d of kayitlar) {
+      const c = cinsAdi(d.ad)
+      const mevcut = map.get(c)
+      if (!mevcut || (d.created_at ?? "") > (mevcut.created_at ?? "")) map.set(c, d)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], "tr"))
+  })()
+
+  /** Mevcut bir cins seçilince ortak alanlar şablondan doldurulur. */
+  function cinsSec(cins: string) {
+    if (cins === "yeni") {
+      setForm(f => ({ ...f, ad: "", marka: "", model: "", konum: "", alis_fiyati: "" }))
+      return
+    }
+    const d = cinsSecenekleri.find(([c]) => c === cins)?.[1]
+    if (!d) return
+    setForm(f => ({
+      ...f,
+      ad: cins,
+      kategori: d.kategori,
+      marka: d.marka ?? "",
+      model: d.model ?? "",
+      konum: d.konum ?? "",
+      alis_fiyati: d.alis_fiyati != null ? String(d.alis_fiyati) : f.alis_fiyati,
+    }))
+  }
+
   const esyaSayisi = (items: DemirbasRow[]) => items.reduce((s, d) => s + (d.adet ?? 1), 0)
   const toplamTutar = (items: DemirbasRow[]) => items.reduce((s, d) => s + (d.alis_fiyati ?? 0) * (d.adet ?? 1), 0)
 
@@ -702,6 +732,31 @@ export function Demirbaslar() {
               <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
                 <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <p>Alış fiyatı ve tarihi bağlı gider işleminden geliyor. Değiştirmek için Finans sayfasından ilgili işlemi düzenleyin.</p>
+              </div>
+            )}
+
+            {/* Aynı cinsten tekrar alımda ortak alanları yeniden girmemek için */}
+            {!editing && cinsSecenekleri.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Cins</Label>
+                <Select
+                  value={cinsSecenekleri.some(([c]) => c === form.ad) ? form.ad : "yeni"}
+                  onValueChange={cinsSec}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yeni">+ Yeni cins</SelectItem>
+                    {cinsSecenekleri.map(([cins, d]) => (
+                      <SelectItem key={cins} value={cins}>
+                        {cins} · {d.kategori}
+                        {d.marka ? ` · ${d.marka}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Daha önce girdiğin bir cinsi seçersen kategori, marka, model, konum ve fiyat otomatik dolar.
+                </p>
               </div>
             )}
 
