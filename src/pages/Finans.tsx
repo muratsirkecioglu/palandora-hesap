@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle, Wrench } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2, Package, ArrowLeftRight, FileCheck, FileX, Copy, AlertTriangle, Wrench, Contact } from "lucide-react"
 import { supabase, type Islem, type MalzemeWithStok, type Hesap } from "@/lib/supabase"
 import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
@@ -51,6 +51,7 @@ export function Finans() {
   const [islemler, setIslemler] = useState<Islem[]>([])
   const [malzemeler, setMalzemeler] = useState<MalzemeWithStok[]>([])
   const [hesaplar, setHesaplar] = useState<Hesap[]>([])
+  const [cariAdMap, setCariAdMap] = useState<Map<string, string>>(new Map())
   const [stokIslemIds, setStokIslemIds] = useState<Set<string>>(new Set())
   const [stokMaliyetMap, setStokMaliyetMap] = useState<Map<string, number>>(new Map())
   const [odenenMap, setOdenenMap] = useState<Map<string, number>>(new Map())
@@ -70,7 +71,7 @@ export function Finans() {
     setLoading(true)
     const islemQ = supabase.from("islemler").select("*").eq("sirket_id", aktifSirketId).order("tarih", { ascending: false })
 
-    const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: odemeData }] = await Promise.all([
+    const [{ data: islemData }, { data: malzemeData }, { data: stokData }, { data: hesapData }, { data: cariData }, { data: odemeData }] = await Promise.all([
       islemQ,
       supabase.from("malzemeler").select("*").eq("sirket_id", aktifSirketId).order("ad"),
       // Sıralama önemli: malzemenin güncel birim fiyatı EN SON girişten alınır.
@@ -80,11 +81,13 @@ export function Finans() {
         .order("tarih", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false }),
       supabase.from("hesaplar").select("*").eq("sirket_id", aktifSirketId).order("ad"),
+      supabase.from("cariler").select("id, unvan").eq("sirket_id", aktifSirketId),
       supabase.from("odemeler").select("islem_id, tutar, hesap_id").eq("sirket_id", aktifSirketId),
     ])
 
     setIslemler((islemData ?? []) as Islem[])
     setHesaplar((hesapData ?? []) as Hesap[])
+    setCariAdMap(new Map(((cariData ?? []) as { id: string; unvan: string }[]).map(c => [c.id, c.unvan])))
 
     // Stok hareketlerini işle
     type StokRow = { islem_id: string | null; malzeme_id: string; miktar: number; tur: string; birim_fiyat: number; tarih: string | null; islem: { tutar: number; nakliye_tutari: number | null; tarih: string; faturali: boolean; nakliye_faturali: boolean } | null }
@@ -304,6 +307,12 @@ export function Finans() {
             <p className="text-xs text-muted-foreground mt-0.5">
               <Wrench className="inline h-3 w-3 mr-1" />
               → {bagliGelir.aciklama}
+            </p>
+          )}
+          {islem.cari_id && cariAdMap.has(islem.cari_id) && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <Contact className="inline h-3 w-3 mr-1" />
+              {cariAdMap.get(islem.cari_id)}
             </p>
           )}
           {islem.adam_saat != null && (

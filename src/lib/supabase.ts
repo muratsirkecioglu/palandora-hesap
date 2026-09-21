@@ -47,9 +47,30 @@ export interface Hesap {
   updated_at: string
 }
 
+export type CariTip = "musteri" | "tedarikci" | "her_ikisi"
+
+export interface Cari {
+  id: string
+  sirket_id: string
+  unvan: string
+  tip: CariTip
+  vergi_dairesi: string | null
+  vergi_no: string | null
+  telefon: string | null
+  email: string | null
+  adres: string | null
+  notlar: string | null
+  aktif: boolean
+  kullanici_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Islem {
   id: string
   sirket_id: string
+  /** Ticari karşı taraf (müşteri/tedarikçi); null ise cariye bağlı değil. */
+  cari_id: string | null
   tarih: string
   aciklama: string
   tutar: number

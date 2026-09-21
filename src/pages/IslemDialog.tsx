@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Loader2, Plus, Trash2 } from "lucide-react"
-import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser, type Demirbase } from "@/lib/supabase"
+import { supabase, type Islem, type MalzemeWithStok, type Hesap, type AppUser, type Demirbase, type Cari } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSirket } from "@/contexts/SirketContext"
 import { Button } from "@/components/ui/button"
@@ -101,6 +101,7 @@ const defaultForm = {
   nakliye_faturali: false,
   faturali: false,
   bagli_gelir_islem_id: "",
+  cari_id: "",
 }
 
 export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, gelirIslemleri, onSaved }: Props) {
@@ -122,6 +123,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   const [satilabilirler, setSatilabilirler] = useState<Demirbase[]>([])
   // Cins şablonu için tüm demirbaşlar (satılmış olanlar da cins bilgisi taşır)
   const [tumDemirbaslar, setTumDemirbaslar] = useState<Demirbase[]>([])
+  const [cariler, setCariler] = useState<Cari[]>([])
   const [satisDemirbasId, setSatisDemirbasId] = useState("")
   const [satisAdet, setSatisAdet] = useState("1")
   const [saving, setSaving] = useState(false)
@@ -179,6 +181,9 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     // Demirbaş Satışı seçilebilmesi için eldeki demirbaşlar + bu işleme bağlı
     // (düzenlemede zaten satılmış olan) kayıtlar.
     if (aktifSirketId) {
+      supabase.from("cariler").select("*").eq("sirket_id", aktifSirketId).eq("aktif", true).order("unvan")
+        .then(({ data }) => setCariler((data ?? []) as Cari[]))
+
       supabase.from("demirbaslar").select("*").eq("sirket_id", aktifSirketId).order("ad")
         .then(({ data }) => {
           const hepsi = (data ?? []) as Demirbase[]
@@ -209,6 +214,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         nakliye_faturali: editing.nakliye_faturali ?? false,
         faturali: editing.faturali ?? false,
         bagli_gelir_islem_id: editing.bagli_gelir_islem_id ?? "",
+        cari_id: editing.cari_id ?? "",
       })
 
       // Mevcut ödemeleri yükle
@@ -286,6 +292,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         nakliye_faturali: initialValues.nakliye_faturali ?? false,
         faturali: initialValues.faturali ?? false,
         bagli_gelir_islem_id: "",
+        cari_id: initialValues.cari_id ?? "",
       })
       // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
@@ -451,6 +458,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         bagli_gelir_islem_id: (isHizmetGider && form.bagli_gelir_islem_id) ? form.bagli_gelir_islem_id : null,
         kullanici_id: user!.id,
         sirket_id: aktifSirketId,
+        cari_id: form.cari_id || null,
       }
 
       let islemId: string
@@ -680,6 +688,25 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               placeholder="İşlem açıklaması"
               disabled={isMalzemeGider || isDemirbasGider}
             />
+          </div>
+
+          {/* Cari — işlemin karşı tarafı; ekstre ve yaşlandırma buna dayanır */}
+          <div className="space-y-1.5">
+            <Label>{form.tur === "gelir" ? "Müşteri" : "Tedarikçi"} (isteğe bağlı)</Label>
+            <Select value={form.cari_id || "yok"} onValueChange={v => setF("cari_id", v === "yok" ? "" : v)}>
+              <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yok">— Cari yok —</SelectItem>
+                {cariler
+                  .filter(c => c.tip === "her_ikisi" || c.tip === (form.tur === "gelir" ? "musteri" : "tedarikci"))
+                  .map(c => <SelectItem key={c.id} value={c.id}>{c.unvan}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {cariler.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Henüz cari tanımlı değil — Cariler sayfasından ekleyebilirsin.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

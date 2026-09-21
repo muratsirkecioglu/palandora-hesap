@@ -10,6 +10,7 @@ import { Uretim } from "@/pages/Uretim"
 import { Kullanicilar } from "@/pages/Kullanicilar"
 import { Demirbaslar } from "@/pages/Demirbaslar"
 import { Hesaplar } from "@/pages/Hesaplar"
+import { Cariler } from "@/pages/Cariler"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route path="uretim" element={<Uretim />} />
         <Route path="demirbaslar" element={<Demirbaslar />} />
         <Route path="hesaplar" element={<Hesaplar />} />
+        <Route path="cariler" element={<Cariler />} />
         <Route path="kullanicilar" element={<AdminRoute><Kullanicilar /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -10,6 +10,7 @@ import {
   X,
   Landmark,
   Factory,
+  Contact,
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Panel" },
   { to: "/finans", icon: TrendingUp, label: "Finans" },
   { to: "/hesaplar", icon: Landmark, label: "Hesaplar" },
+  { to: "/cariler", icon: Contact, label: "Cariler" },
   { to: "/stok", icon: Package, label: "Stok" },
   { to: "/uretim", icon: Factory, label: "Üretim" },
   { to: "/demirbaslar", icon: Building2, label: "Demirbaşlar" },
