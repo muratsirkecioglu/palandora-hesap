@@ -102,6 +102,17 @@ const defaultForm = {
   faturali: false,
   bagli_gelir_islem_id: "",
   cari_id: "",
+  kdv_orani: "0",
+  kdv_tutari: "0",
+}
+
+/** Türkiye'de geçerli oranlar; 8 ve 18 geçmiş kayıtlar için bırakıldı. */
+const KDV_ORANLARI = ["0", "1", "8", "10", "18", "20"]
+
+/** KDV dahil tutardan içindeki KDV'yi ayrıştırır. */
+function kdvAyristir(tutar: number, oran: number) {
+  if (oran <= 0 || tutar <= 0) return 0
+  return tutar * oran / (100 + oran)
 }
 
 export function IslemDialog({ open, onClose, editing, initialValues, malzemeler, hesaplar, gelirIslemleri, onSaved }: Props) {
@@ -148,6 +159,16 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         .then(({ data }) => setKullanicilar((data ?? []) as AppUser[]))
     }
   }, [])
+
+  // Tutar veya oran değişince KDV'yi yeniden hesapla. Kullanıcı sonrasında
+  // tutarı elle düzeltebilir (faturadaki kuruş farkı için); bir dahaki
+  // tutar/oran değişikliğine kadar korunur.
+  useEffect(() => {
+    const tutar = parseFloat(form.tutar) || 0
+    const oran = parseFloat(form.kdv_orani) || 0
+    const hesap = kdvAyristir(tutar, oran)
+    setForm(prev => ({ ...prev, kdv_tutari: hesap > 0 ? hesap.toFixed(2) : "0" }))
+  }, [form.tutar, form.kdv_orani])
 
   useEffect(() => {
     if (!isDemirbasGider || !form.tarih) return
@@ -215,6 +236,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         faturali: editing.faturali ?? false,
         bagli_gelir_islem_id: editing.bagli_gelir_islem_id ?? "",
         cari_id: editing.cari_id ?? "",
+        kdv_orani: String(editing.kdv_orani ?? 0),
+        kdv_tutari: String(editing.kdv_tutari ?? 0),
       })
 
       // Mevcut ödemeleri yükle
@@ -293,6 +316,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         faturali: initialValues.faturali ?? false,
         bagli_gelir_islem_id: "",
         cari_id: initialValues.cari_id ?? "",
+        kdv_orani: String(initialValues.kdv_orani ?? 0),
+        kdv_tutari: String(initialValues.kdv_tutari ?? 0),
       })
       // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
@@ -459,6 +484,8 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         kullanici_id: user!.id,
         sirket_id: aktifSirketId,
         cari_id: form.cari_id || null,
+        kdv_orani: parseFloat(form.kdv_orani) || 0,
+        kdv_tutari: parseFloat(form.kdv_tutari) || 0,
       }
 
       let islemId: string
@@ -688,6 +715,64 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
               placeholder="İşlem açıklaması"
               disabled={isMalzemeGider || isDemirbasGider}
             />
+          </div>
+
+          {/* KDV — tutarın içinden ayrıştırılır, tutara eklenmez */}
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>KDV Oranı</Label>
+                <Select value={form.kdv_orani} onValueChange={v => setF("kdv_orani", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">KDV yok / belirtilmemiş</SelectItem>
+                    {KDV_ORANLARI.filter(o => o !== "0").map(o => (
+                      <SelectItem key={o} value={o}>%{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>KDV Tutarı (₺)</Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={form.kdv_tutari}
+                  onChange={e => setF("kdv_tutari", e.target.value)}
+                  disabled={(parseFloat(form.kdv_orani) || 0) <= 0}
+                />
+              </div>
+            </div>
+            {(parseFloat(form.kdv_orani) || 0) > 0 && (() => {
+              const tutar = parseFloat(form.tutar) || 0
+              const kdv = parseFloat(form.kdv_tutari) || 0
+              return (
+                <div className="rounded-md border border-border px-3 py-2 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Matrah (KDV hariç)</span>
+                    <span className="font-medium">{formatCurrency(tutar - kdv)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">KDV</span>
+                    <span className="font-medium">{formatCurrency(kdv)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-1">
+                    <span className="font-medium">Toplam (girdiğin tutar)</span>
+                    <span className="font-semibold">{formatCurrency(tutar)}</span>
+                  </div>
+                  <p className="text-muted-foreground pt-0.5">
+                    KDV, girdiğin tutarın <strong>içinden</strong> ayrıştırılır — tutara eklenmez.
+                    Fatura ile kuruş farkı varsa KDV tutarını elle düzeltebilirsin.
+                    {form.nakliye_tutari && parseFloat(form.nakliye_tutari) > 0 ? " Nakliye tutarı bu hesaba dahil değildir." : ""}
+                  </p>
+                  {form.tur === "gider" && !form.faturali && (
+                    <p className="text-orange-600">
+                      Faturalı işaretli değil — KDV yalnızca faturalı alışlarda indirilebilir,
+                      bu kayıt indirilecek KDV toplamına girmez.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Cari — işlemin karşı tarafı; ekstre ve yaşlandırma buna dayanır */}

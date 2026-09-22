@@ -192,6 +192,31 @@ export function Finans() {
     return ozetFiltre === "son6ay" ? rows.slice(0, 6) : rows
   })()
 
+  // Aylık KDV özeti. İndirilecek KDV yalnızca FATURALI alışlardan sayılır —
+  // faturasız alışta KDV indirim hakkı doğmaz.
+  const kdvOzetleri = (() => {
+    const map = new Map<string, { hesaplanan: number; indirilecek: number; faturasiz: number }>()
+    for (const i of finansIslemler) {
+      const kdv = i.kdv_tutari ?? 0
+      if (kdv <= 0) continue
+      const key = i.tarih.slice(0, 7)
+      const e = map.get(key) ?? { hesaplanan: 0, indirilecek: 0, faturasiz: 0 }
+      if (i.tur === "gelir") e.hesaplanan += kdv
+      else if (i.faturali) e.indirilecek += kdv
+      else e.faturasiz += kdv
+      map.set(key, e)
+    }
+    const rows = Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, v]) => ({
+        key,
+        label: new Date(key + "-02").toLocaleDateString("tr-TR", { month: "short", year: "numeric" }),
+        ...v,
+        net: v.hesaplanan - v.indirilecek,
+      }))
+    return ozetFiltre === "son6ay" ? rows.slice(0, 6) : rows
+  })()
+
   const gelirlerTumu = finansIslemler.filter(i => i.tur === "gelir")
   const giderlerTumu = finansIslemler.filter(i => i.tur === "gider")
 
@@ -435,6 +460,69 @@ export function Finans() {
                   <td className="px-3 py-2 text-right text-red-500 whitespace-nowrap">{formatCurrency(ayOzetleri.reduce((s, r) => s + r.gider, 0))}</td>
                   <td className={`px-4 py-2 text-right whitespace-nowrap ${ayOzetleri.reduce((s, r) => s + r.net, 0) >= 0 ? "text-green-600" : "text-red-500"}`}>
                     {(() => { const n = ayOzetleri.reduce((s, r) => s + r.net, 0); return (n >= 0 ? "+" : "") + formatCurrency(n) })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* KDV Özeti */}
+      {!loading && kdvOzetleri.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3 border-b border-border">
+            <CardTitle className="text-sm font-semibold">KDV Özeti</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              İndirilecek KDV yalnızca faturalı alışlardan hesaplanır
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0 px-0 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left font-medium px-4 py-2">Ay</th>
+                  <th className="text-right font-medium px-3 py-2">Hesaplanan</th>
+                  <th className="text-right font-medium px-3 py-2">İndirilecek</th>
+                  <th className="text-right font-medium px-4 py-2">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {kdvOzetleri.map(row => (
+                  <tr key={row.key} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-2 capitalize whitespace-nowrap">
+                      {row.label}
+                      {row.faturasiz > 0 && (
+                        <span className="block text-[10px] text-orange-500">
+                          {formatCurrency(row.faturasiz)} faturasız (indirilemez)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right text-green-600 font-medium whitespace-nowrap">{formatCurrency(row.hesaplanan)}</td>
+                    <td className="px-3 py-2 text-right text-red-500 font-medium whitespace-nowrap">{formatCurrency(row.indirilecek)}</td>
+                    <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${row.net > 0 ? "text-red-500" : "text-green-600"}`}>
+                      {formatCurrency(Math.abs(row.net))}
+                      <span className="block text-[10px] font-normal text-muted-foreground">
+                        {row.net > 0.005 ? "ödenecek" : row.net < -0.005 ? "devreden" : "—"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+                  <td className="px-4 py-2">Toplam</td>
+                  <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">{formatCurrency(kdvOzetleri.reduce((s, r) => s + r.hesaplanan, 0))}</td>
+                  <td className="px-3 py-2 text-right text-red-500 whitespace-nowrap">{formatCurrency(kdvOzetleri.reduce((s, r) => s + r.indirilecek, 0))}</td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    {(() => {
+                      const n = kdvOzetleri.reduce((s, r) => s + r.net, 0)
+                      return (
+                        <span className={n > 0 ? "text-red-500" : "text-green-600"}>
+                          {formatCurrency(Math.abs(n))}
+                        </span>
+                      )
+                    })()}
                   </td>
                 </tr>
               </tfoot>
