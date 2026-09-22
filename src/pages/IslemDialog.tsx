@@ -104,6 +104,16 @@ const defaultForm = {
   cari_id: "",
   kdv_orani: "0",
   kdv_tutari: "0",
+  fatura_no: "",
+}
+
+interface KalemSatir {
+  aciklama: string
+  miktar: string
+  birim: string
+  /** KDV hariç birim fiyat */
+  birim_fiyat: string
+  kdv_orani: string
 }
 
 /** Türkiye'de geçerli oranlar; 8 ve 18 geçmiş kayıtlar için bırakıldı. */
@@ -135,6 +145,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
   // Cins şablonu için tüm demirbaşlar (satılmış olanlar da cins bilgisi taşır)
   const [tumDemirbaslar, setTumDemirbaslar] = useState<Demirbase[]>([])
   const [cariler, setCariler] = useState<Cari[]>([])
+  const [kalemler, setKalemler] = useState<KalemSatir[]>([])
   const [satisDemirbasId, setSatisDemirbasId] = useState("")
   const [satisAdet, setSatisAdet] = useState("1")
   const [saving, setSaving] = useState(false)
@@ -160,15 +171,57 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     }
   }, [])
 
-  // Tutar veya oran değişince KDV'yi yeniden hesapla. Kullanıcı sonrasında
-  // tutarı elle düzeltebilir (faturadaki kuruş farkı için); bir dahaki
-  // tutar/oran değişikliğine kadar korunur.
+  // Kalem varsa tutar ve KDV kalemlerden gelir; kalem yoksa orana göre
+  // tutarın içinden ayrıştırılır.
+  const kalemOzet = (() => {
+    const gecerli = kalemler.filter(k => k.aciklama.trim() && (parseFloat(k.miktar) || 0) > 0)
+    let matrah = 0
+    let kdv = 0
+    const oranlar = new Set<number>()
+    for (const k of gecerli) {
+      const satirMatrah = (parseFloat(k.miktar) || 0) * (parseFloat(k.birim_fiyat) || 0)
+      const oran = parseFloat(k.kdv_orani) || 0
+      matrah += satirMatrah
+      kdv += satirMatrah * oran / 100
+      oranlar.add(oran)
+    }
+    return {
+      adet: gecerli.length,
+      matrah, kdv, toplam: matrah + kdv,
+      // Tek oran varsa işleme onu yazarız; muhtelifse 0 (= belirtilmemiş)
+      tekOran: oranlar.size === 1 ? [...oranlar][0] : null,
+    }
+  })()
+  const kalemVar = kalemOzet.adet > 0
+
   useEffect(() => {
+    if (kalemVar) {
+      setForm(prev => ({
+        ...prev,
+        tutar: kalemOzet.toplam.toFixed(2),
+        kdv_tutari: kalemOzet.kdv.toFixed(2),
+        kdv_orani: String(kalemOzet.tekOran ?? 0),
+      }))
+    }
+  }, [kalemVar, kalemOzet.toplam, kalemOzet.kdv, kalemOzet.tekOran])
+
+  // Kalem yoksa: tutar veya oran değişince KDV'yi yeniden hesapla. Kullanıcı
+  // sonrasında elle düzeltebilir; bir dahaki tutar/oran değişikliğine kadar korunur.
+  useEffect(() => {
+    if (kalemVar) return
     const tutar = parseFloat(form.tutar) || 0
     const oran = parseFloat(form.kdv_orani) || 0
     const hesap = kdvAyristir(tutar, oran)
     setForm(prev => ({ ...prev, kdv_tutari: hesap > 0 ? hesap.toFixed(2) : "0" }))
-  }, [form.tutar, form.kdv_orani])
+  }, [form.tutar, form.kdv_orani, kalemVar])
+
+  function addKalem() {
+    setKalemler(p => [...p, { aciklama: "", miktar: "1", birim: "Adet", birim_fiyat: "", kdv_orani: form.kdv_orani !== "0" ? form.kdv_orani : "20" }])
+  }
+  function removeKalem(i: number) { setKalemler(p => p.filter((_, idx) => idx !== i)) }
+  function updateKalem(i: number, field: keyof KalemSatir, value: string) {
+    setKalemler(p => p.map((k, idx) => idx === i ? { ...k, [field]: value } : k))
+  }
 
   useEffect(() => {
     if (!isDemirbasGider || !form.tarih) return
@@ -198,6 +251,26 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
     setBagliGiderler([])
     setSatisDemirbasId("")
     setSatisAdet("1")
+    setKalemler([])
+
+    // Fatura kalemlerini yükle (düzenleme ve kopyalamada)
+    const kaynakId = editing?.id ?? initialValues?.id
+    if (kaynakId) {
+      supabase.from("islem_kalemleri")
+        .select("aciklama, miktar, birim, birim_fiyat, kdv_orani")
+        .eq("islem_id", kaynakId)
+        .order("sira")
+        .then(({ data }) => {
+          if (!data || data.length === 0) return
+          setKalemler(data.map(k => ({
+            aciklama: k.aciklama,
+            miktar: String(k.miktar),
+            birim: k.birim,
+            birim_fiyat: String(k.birim_fiyat),
+            kdv_orani: String(k.kdv_orani),
+          })))
+        })
+    }
 
     // Demirbaş Satışı seçilebilmesi için eldeki demirbaşlar + bu işleme bağlı
     // (düzenlemede zaten satılmış olan) kayıtlar.
@@ -238,6 +311,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         cari_id: editing.cari_id ?? "",
         kdv_orani: String(editing.kdv_orani ?? 0),
         kdv_tutari: String(editing.kdv_tutari ?? 0),
+        fatura_no: editing.fatura_no ?? "",
       })
 
       // Mevcut ödemeleri yükle
@@ -318,6 +392,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         cari_id: initialValues.cari_id ?? "",
         kdv_orani: String(initialValues.kdv_orani ?? 0),
         kdv_tutari: String(initialValues.kdv_tutari ?? 0),
+        fatura_no: "",
       })
       // Kopyada ödemeler sıfır başlar — linkedId'ler boş kalır
       if (initialValues.tur === "gider" && initialValues.kategori === "Malzeme") {
@@ -486,6 +561,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         cari_id: form.cari_id || null,
         kdv_orani: parseFloat(form.kdv_orani) || 0,
         kdv_tutari: parseFloat(form.kdv_tutari) || 0,
+        fatura_no: form.fatura_no.trim() || null,
       }
 
       let islemId: string
@@ -496,6 +572,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
         islemId = editing.id
         await supabase.from("odemeler").delete().eq("islem_id", islemId)
         await supabase.from("islem_stok").delete().eq("islem_id", islemId)
+        await supabase.from("islem_kalemleri").delete().eq("islem_id", islemId)
         // Kategori Malzeme'den başka bir türe değiştiyse bağlı malzeme kaydını sil
         if (linkedMalzemeId && !isMalzemeGider) {
           await supabase.from("malzemeler").delete().eq("id", linkedMalzemeId)
@@ -520,6 +597,24 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
           }))
         )
         if (odemeErr) { setError(odemeErr.message); return }
+      }
+
+      // Fatura kalemleri
+      const gecerliKalemler = kalemler.filter(k => k.aciklama.trim() && (parseFloat(k.miktar) || 0) > 0)
+      if (gecerliKalemler.length > 0) {
+        const { error: kErr } = await supabase.from("islem_kalemleri").insert(
+          gecerliKalemler.map((k, i) => ({
+            islem_id: islemId,
+            sirket_id: aktifSirketId,
+            sira: i,
+            aciklama: k.aciklama.trim(),
+            miktar: parseFloat(k.miktar) || 0,
+            birim: k.birim,
+            birim_fiyat: parseFloat(k.birim_fiyat) || 0,
+            kdv_orani: parseFloat(k.kdv_orani) || 0,
+          }))
+        )
+        if (kErr) { setError(kErr.message); return }
       }
 
       // ── Demirbaş gider: demirbaş kaydı oluştur / güncelle ────────────────
@@ -717,12 +812,120 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
             />
           </div>
 
+          {/* ── Fatura ve kalemler ─────────────────────────────────────── */}
+          <div className="space-y-3 border border-border rounded-lg p-3">
+            <div className="space-y-1.5">
+              <Label>Fatura No (isteğe bağlı)</Label>
+              <Input
+                value={form.fatura_no}
+                onChange={e => setF("fatura_no", e.target.value)}
+                placeholder="ör. ABC2026000123"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Fatura Kalemleri</p>
+              <Button variant="outline" size="sm" onClick={addKalem} className="gap-1 text-xs h-7">
+                <Plus className="h-3 w-3" /> Kalem Ekle
+              </Button>
+            </div>
+
+            {kalemler.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                İsteğe bağlı. Kalem girersen tutar ve KDV kalemlerden hesaplanır;
+                girmezsen tek tutarla devam edersin.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {kalemler.map((k, i) => {
+                  const satirMatrah = (parseFloat(k.miktar) || 0) * (parseFloat(k.birim_fiyat) || 0)
+                  const satirKdv = satirMatrah * (parseFloat(k.kdv_orani) || 0) / 100
+                  return (
+                    <div key={i} className="border border-border/60 rounded-md p-2 space-y-2 bg-muted/20">
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          className="h-8 text-xs flex-1"
+                          placeholder="Açıklama"
+                          value={k.aciklama}
+                          onChange={e => updateKalem(i, "aciklama", e.target.value)}
+                        />
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => removeKalem(i)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Miktar</Label>
+                          <Input
+                            className="h-8 text-xs" type="number" min="0" step="0.001"
+                            value={k.miktar}
+                            onChange={e => updateKalem(i, "miktar", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Birim</Label>
+                          <Select value={k.birim} onValueChange={v => updateKalem(i, "birim", v)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {BIRIMLER.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">Birim Fiyat</Label>
+                          <Input
+                            className="h-8 text-xs" type="number" min="0" step="0.01"
+                            placeholder="KDV hariç"
+                            value={k.birim_fiyat}
+                            onChange={e => updateKalem(i, "birim_fiyat", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px]">KDV</Label>
+                          <Select value={k.kdv_orani} onValueChange={v => updateKalem(i, "kdv_orani", v)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {KDV_ORANLARI.map(o => <SelectItem key={o} value={o}>%{o}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-right">
+                        Matrah {formatCurrency(satirMatrah)} + KDV {formatCurrency(satirKdv)} ={" "}
+                        <span className="font-medium text-foreground">{formatCurrency(satirMatrah + satirKdv)}</span>
+                      </p>
+                    </div>
+                  )
+                })}
+
+                <div className="rounded-md border border-border px-3 py-2 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Matrah Toplamı</span>
+                    <span className="font-medium">{formatCurrency(kalemOzet.matrah)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">KDV Toplamı</span>
+                    <span className="font-medium">{formatCurrency(kalemOzet.kdv)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-1">
+                    <span className="font-medium">Genel Toplam</span>
+                    <span className="font-semibold">{formatCurrency(kalemOzet.toplam)}</span>
+                  </div>
+                  <p className="text-muted-foreground pt-0.5">
+                    Bu toplam işlemin tutarı olarak yazılır; tutar ve KDV alanları elle değiştirilemez.
+                    {kalemOzet.tekOran === null && " Kalemlerde muhtelif KDV oranı var."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* KDV — tutarın içinden ayrıştırılır, tutara eklenmez */}
           <div className="space-y-1.5">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>KDV Oranı</Label>
-                <Select value={form.kdv_orani} onValueChange={v => setF("kdv_orani", v)}>
+                <Select value={form.kdv_orani} onValueChange={v => setF("kdv_orani", v)} disabled={kalemVar}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">KDV yok / belirtilmemiş</SelectItem>
@@ -738,7 +941,7 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
                   type="number" min="0" step="0.01"
                   value={form.kdv_tutari}
                   onChange={e => setF("kdv_tutari", e.target.value)}
-                  disabled={(parseFloat(form.kdv_orani) || 0) <= 0}
+                  disabled={kalemVar || (parseFloat(form.kdv_orani) || 0) <= 0}
                 />
               </div>
             </div>
@@ -796,8 +999,14 @@ export function IslemDialog({ open, onClose, editing, initialValues, malzemeler,
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Toplam Tutar (₺)</Label>
-              <Input type="number" min="0" step="0.01" value={form.tutar} onChange={e => setF("tutar", e.target.value)} placeholder="0.00" />
+              <Label>Toplam Tutar (₺){kalemVar ? " — kalemlerden" : ""}</Label>
+              <Input
+                type="number" min="0" step="0.01"
+                value={form.tutar}
+                onChange={e => setF("tutar", e.target.value)}
+                placeholder="0.00"
+                disabled={kalemVar}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Tarih</Label>

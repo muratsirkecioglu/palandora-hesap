@@ -334,12 +334,18 @@ export function Finans() {
               → {bagliGelir.aciklama}
             </p>
           )}
-          {islem.cari_id && cariAdMap.has(islem.cari_id) && (
+          {(islem.cari_id && cariAdMap.has(islem.cari_id)) || islem.fatura_no ? (
             <p className="text-xs text-muted-foreground mt-0.5">
-              <Contact className="inline h-3 w-3 mr-1" />
-              {cariAdMap.get(islem.cari_id)}
+              {islem.cari_id && cariAdMap.has(islem.cari_id) && (
+                <><Contact className="inline h-3 w-3 mr-1" />{cariAdMap.get(islem.cari_id)}</>
+              )}
+              {islem.fatura_no && (
+                <span className={islem.cari_id && cariAdMap.has(islem.cari_id) ? "ml-2" : ""}>
+                  Fatura: {islem.fatura_no}
+                </span>
+              )}
             </p>
-          )}
+          ) : null}
           {islem.adam_saat != null && (
             <p className="text-xs text-muted-foreground mt-0.5">Emek: {islem.adam_saat} adam/saat</p>
           )}

@@ -84,12 +84,27 @@ export interface Islem {
   nakliye_tutari: number | null
   nakliye_faturali: boolean
   faturali: boolean
-  /** KDV oranı (%). 0 = KDV belirtilmemiş. */
+  /** KDV oranı (%). 0 = KDV belirtilmemiş veya kalemlerde muhtelif oran var. */
   kdv_orani: number
   /** tutar'ın İÇİNDEKİ KDV. matrah = tutar - kdv_tutari */
   kdv_tutari: number
+  fatura_no: string | null
   transfer_eslesme_id: string | null
   bagli_gelir_islem_id: string | null
+  created_at: string
+}
+
+export interface IslemKalem {
+  id: string
+  sirket_id: string
+  islem_id: string
+  sira: number
+  aciklama: string
+  miktar: number
+  birim: string
+  /** KDV HARİÇ birim fiyat. */
+  birim_fiyat: number
+  kdv_orani: number
   created_at: string
 }
 
