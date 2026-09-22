@@ -28,6 +28,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // exceljs yalnızca rapor dışa aktarılırken dinamik yüklenir (~930 KB).
+        // Ön belleğe alınırsa PWA kurulumu bunu peşin indirir; dışa aktarma
+        // çevrimdışı yapılan bir iş olmadığı için gerektiğinde indirilmesi yeterli.
+        globIgnores: ['**/exceljs*.js'],
         navigateFallback: null,
       },
     }),

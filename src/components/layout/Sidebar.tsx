@@ -11,6 +11,7 @@ import {
   Landmark,
   Factory,
   Contact,
+  BarChart3,
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -27,6 +28,7 @@ const navItems = [
   { to: "/stok", icon: Package, label: "Stok" },
   { to: "/uretim", icon: Factory, label: "Üretim" },
   { to: "/demirbaslar", icon: Building2, label: "Demirbaşlar" },
+  { to: "/raporlar", icon: BarChart3, label: "Raporlar" },
 ]
 
 const adminItems = [
